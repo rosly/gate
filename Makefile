@@ -26,6 +26,7 @@ SIZE            := '$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-size'
 #source common to all targets
 C_SOURCE_FILES += \
         $(abspath main.c) \
+        $(abspath uart_log.c) \
         $(abspath external/system_nrf51422.c)
 
 #$(abspath ../../../../../components/libraries/button/app_button.c) \
@@ -71,11 +72,11 @@ INC_PATHS = \
         -I$(abspath external/CMSIS/Include)
 
 DEFINES += \
-        NRF51
-#CFLAGS  = -DNRF_LOG_USES_UART=1
+        NRF51 \
+        BOARD_PCA10028
+
 #CFLAGS += -DT2T_PARSER_ENABLE
 #CFLAGS += -DSWI_DISABLE0
-#CFLAGS += -DBOARD_PCA10028
 #CFLAGS += -DNDEF_PARSER_LOG_ENABLE
 #CFLAGS += -DENABLE_DEBUG_LOG_SUPPORT
 #CFLAGS += -DDEBUG
