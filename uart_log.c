@@ -48,7 +48,7 @@ void log_printf(const char * format_msg, ...)
 
     va_list p_args;
     va_start(p_args, format_msg);
-    snprintf(buffer, sizeof(buffer), format_msg, p_args);
+    vsnprintf(buffer, sizeof(buffer), format_msg, p_args);
     va_end(p_args);
 
     log_write_string(buffer);

@@ -47,7 +47,7 @@ void tag_scan(void)
     err_code = adafruit_pn532_read_passive_target_id(
        PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
     if (err_code != NRF_SUCCESS) {
-        log_printf("Error while scaning tag");
+        log_printf("Error while scaning tag %u", err_code);
         return;
     }
 
