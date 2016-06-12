@@ -44,7 +44,7 @@ void log_init()
 
 void log_printf(const char * format_msg, ...)
 {
-    static char buffer[256];
+    char buffer[256];
 
     va_list p_args;
     va_start(p_args, format_msg);
@@ -52,5 +52,22 @@ void log_printf(const char * format_msg, ...)
     va_end(p_args);
 
     log_write_string(buffer);
+    log_write_string("\r\n");
 }
+
+void log_hex(const char* msg, const uint8_t * p_data, const uint32_t len)
+{
+    size_t i;
+    char buffer[4];
+    
+    log_write_string(msg);
+    for (i = 0; i < len; i++)
+    {
+        snprintf(buffer, sizeof(buffer), " %02X", p_data[i]);
+        log_write_string(buffer);
+    }
+
+    log_write_string("\r\n");
+}
+
 

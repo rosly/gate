@@ -27,36 +27,11 @@ SIZE            := '$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-size'
 C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath uart_log.c) \
-        $(abspath external/system_nrf51422.c)
-
-#$(abspath ../../../../../components/libraries/button/app_button.c) \
-#$(abspath ../../../../../components/libraries/util/app_error.c) \
-#$(abspath ../../../../../components/libraries/util/app_error_weak.c) \
-#$(abspath ../../../../../components/libraries/fifo/app_fifo.c) \
-#$(abspath ../../../../../components/libraries/timer/app_timer.c) \
-#$(abspath ../../../../../components/libraries/trace/app_trace.c) \
-#$(abspath ../../../../../components/libraries/util/app_util_platform.c) \
-#$(abspath ../../../../../components/nfc/ndef/parser/message/nfc_ndef_msg_parser.c) \
-#$(abspath ../../../../../components/nfc/ndef/parser/message/nfc_ndef_msg_parser_local.c) \
-#$(abspath ../../../../../components/nfc/ndef/parser/record/nfc_ndef_record_parser.c) \
-#$(abspath ../../../../../components/libraries/util/nrf_assert.c) \
-#$(abspath ../../../../../components/libraries/util/nrf_log.c) \
-#$(abspath ../../../../../components/libraries/uart/retarget.c) \
-#$(abspath ../../../../../external/nfc_adafruit_library/adafruit_pn532.c) \
-#$(abspath ../../../../../components/libraries/uart/app_uart_fifo.c) \
-#$(abspath ../../../../../components/drivers_nrf/delay/nrf_delay.c) \
-#$(abspath ../../../../../components/drivers_nrf/common/nrf_drv_common.c) \
-#$(abspath ../../../../../components/drivers_nrf/gpiote/nrf_drv_gpiote.c) \
-#$(abspath ../../../../../components/drivers_nrf/twi_master/nrf_drv_twi.c) \
-#$(abspath ../../../../../components/drivers_nrf/uart/nrf_drv_uart.c) \
-#$(abspath ../../../../bsp/bsp.c) \
-#$(abspath ../../../../../external/segger_rtt/RTT_Syscalls_GCC.c) \
-#$(abspath ../../../../../external/segger_rtt/SEGGER_RTT.c) \
-#$(abspath ../../../../../external/segger_rtt/SEGGER_RTT_printf.c) \
-#$(abspath ../../../../../components/toolchain/system_nrf51.c) \
-#$(abspath ../../../../../components/nfc/ndef/generic/message/nfc_ndef_msg.c) \
-#$(abspath ../../../../../components/nfc/ndef/generic/record/nfc_ndef_record.c) \
-#$(abspath ../../../../../components/nfc/t2t_parser/nfc_t2t_parser.c) \
+        $(abspath external/drivers_nrf/delay/nrf_delay.c) \
+        $(abspath external/drivers_nrf/twi_master/nrf_drv_twi.c) \
+        $(abspath external/drivers_nrf/common/nrf_drv_common.c) \
+        $(abspath external/system_nrf51422.c) \
+        $(abspath external/nfc_adafruit_library/adafruit_pn532.c)
 
 #assembly files common to all targets
 ASM_SOURCE_FILES  = \
@@ -69,7 +44,14 @@ INC_PATHS = \
         -I$(abspath external/drivers_nrf/hal) \
         -I$(abspath external/drivers_nrf/device) \
         -I$(abspath external/drivers_nrf/bsp) \
-        -I$(abspath external/CMSIS/Include)
+        -I$(abspath external/drivers_nrf/delay) \
+        -I$(abspath external/drivers_nrf/nrf_soc_nosd) \
+        -I$(abspath external/drivers_nrf/twi_master) \
+        -I$(abspath external/drivers_nrf/config) \
+        -I$(abspath external/drivers_nrf/common) \
+        -I$(abspath external/util_nrf) \
+        -I$(abspath external/CMSIS/Include) \
+        -I$(abspath external/nfc_adafruit_library)
 
 DEFINES += \
         NRF51 \
