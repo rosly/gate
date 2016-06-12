@@ -1,0 +1,11 @@
+Compare current Adafruit code
+https://github.com/adafruit/Adafruit-PN532/blob/master/Adafruit_PN532.cpp
+with our libary and implement missing Mifare functions:
+- authentication
+- read write
+Hint: lokk at adafruit_pn532_in_data_exchange() function. Seems that new
+adafruit code does not use this function anymore and instead they create
+PN532_COMMAND_INDATAEXCHANGE buffers for exery type of function. This is more
+clean solution in my opinion while adafruit_pn532_in_data_exchange() could
+possibly save some code in case we would like to support multiple tag types
+

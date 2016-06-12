@@ -121,6 +121,9 @@ static const nrf_drv_twi_t m_twi_master = NRF_DRV_TWI_INSTANCE(MASTER_TWI_INST);
 
 static uint8_t pn532_packet_buf[PN532_PACKBUFFSIZ];
 
+/// Buffer for low level communication.
+static uint8_t pn532_rxtx_buffer[PN532_PACKBUFFSIZ];
+
 static bool lib_initialized = false;
 
 
@@ -195,7 +198,6 @@ static ret_code_t adafruit_pn532_header_check(uint8_t const * p_buffer, uint8_t 
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_init(bool force)
 {
     uint32_t ver_data;  // Variable to store firmware version read from PN532.
@@ -263,7 +265,6 @@ ret_code_t adafruit_pn532_init(bool force)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_create_i2c()
 {
     PN532_LOG("Creating I2C\r\n");
@@ -282,7 +283,6 @@ ret_code_t adafruit_pn532_create_i2c()
     return NRF_SUCCESS;
 }
 
-
 void print_hex(const uint8_t * p_data, const uint32_t len)
 {
     uint32_t i;
@@ -294,7 +294,6 @@ void print_hex(const uint8_t * p_data, const uint32_t len)
 
     printf("\r\n");
 }
-
 
 void print_hex_char(const uint8_t * p_data, const uint32_t len)
 {
@@ -321,7 +320,6 @@ void print_hex_char(const uint8_t * p_data, const uint32_t len)
 
     printf("\r\n");
 }
-
 
 ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response)
 {
@@ -367,7 +365,6 @@ ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t timeout)
 {
     PN532_LOG("Trying to send command\r\n");
@@ -390,7 +387,6 @@ ret_code_t adafruit_pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t ti
 
     return adafruit_pn532_read_ack();
 }
-
 
 ret_code_t adafruit_pn532_sam_config(uint8_t mode)
 {
@@ -435,7 +431,6 @@ ret_code_t adafruit_pn532_sam_config(uint8_t mode)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_power_down(void)
 {
     PN532_LOG("Powering down the PN532\r\n");
@@ -473,7 +468,6 @@ ret_code_t adafruit_pn532_power_down(void)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_wake_up(void)
 {
     ret_code_t err_code;
@@ -499,7 +493,6 @@ ret_code_t adafruit_pn532_wake_up(void)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries)
 {
     ret_code_t err_code;
@@ -524,7 +517,6 @@ ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries)
 
     return NRF_SUCCESS;
 }
-
 
 ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
                                                  uint8_t * p_uid,
@@ -554,7 +546,7 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
                                                   PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT);
     if (err_code != NRF_SUCCESS)
     {
-        PN532_LOG("No card(s) read, err_code = %d\r\n", err_code);
+        PN532_LOG("Passive target request error, err_code = %d\r\n", err_code);
         return err_code;
     }
 
@@ -568,8 +560,8 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
 
     if (!adafruit_pn532_waitready_ms(timeout))
     {
-        PN532_LOG("IRQ time-out\r\n");
-        return NRF_ERROR_INTERNAL;
+        PN532_LOG("IRQ time-out, no tag in range\r\n");
+        return NRF_ERROR_TIMEOUT;
     }
 
     err_code = adafruit_pn532_read_data(pn532_packet_buf,
@@ -579,6 +571,17 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
         PN532_LOG("Failed while reading data! err_code = %d\r\n", err_code);
         return err_code;
     }
+
+    /* ISO14443A card response should be in the following format:
+    byte            Description
+    -------------   ------------------------------------------
+    b0..6           Frame header and preamble
+    b7              Tags Found
+    b8              Tag Number (only one used in this example)
+    b9..10          SENS_RES
+    b11             SEL_RES
+    b12             NFCID Length
+    b13..NFCIDLen   NFCID                                      */
 
     if (pn532_packet_buf[REPLY_INLISTPASSIVETARGET_106A_NBTG_OFFSET] != 1)
     {
@@ -829,7 +832,6 @@ ret_code_t adafruit_pn532_ntag2xx_write_ndef_uri(uint8_t uri_id, char * p_url, u
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_read_ack(void)
 {
     PN532_LOG("Reading ACK\r\n");
@@ -862,12 +864,10 @@ ret_code_t adafruit_pn532_read_ack(void)
     return NRF_SUCCESS;
 }
 
-
 bool adafruit_pn532_is_ready(void)
 {
-    return  nrf_gpio_pin_read(pn532_object._irq) == 0;
+    return nrf_gpio_pin_read(pn532_object._irq) == 0;
 }
-
 
 bool adafruit_pn532_waitready_ms(uint16_t timeout)
 {
@@ -884,9 +884,6 @@ bool adafruit_pn532_waitready_ms(uint16_t timeout)
 
     return result;
 }
-
-/// Buffer for low level communication.
-static uint8_t pn532_rxtx_buffer[PN532_PACKBUFFSIZ];
 
 ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n)
 {
@@ -923,7 +920,6 @@ ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n)
 
     return NRF_SUCCESS;
 }
-
 
 ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
 {
@@ -979,7 +975,6 @@ ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
     return NRF_SUCCESS;
 }
 
-
 /** Function for enabling or disabling the PN532 RF field.
  *
  *  This function sends a configuration command to the PN532, which enables or disables the RF field.
@@ -1022,12 +1017,10 @@ static ret_code_t adafruit_pn532_switch_field(uint8_t field_conf)
     return NRF_SUCCESS;
 }
 
-
 ret_code_t adafruit_pn532_field_on(void)
 {
     return adafruit_pn532_switch_field(RFCONFIGURATION_RFFIELD_ON);
 }
-
 
 ret_code_t adafruit_pn532_field_off(void)
 {
