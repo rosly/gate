@@ -26,12 +26,12 @@ SIZE            := '$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-size'
 #source common to all targets
 C_SOURCE_FILES += \
         $(abspath main.c) \
+        $(abspath pn532.c) \
         $(abspath uart_log.c) \
         $(abspath external/drivers_nrf/delay/nrf_delay.c) \
         $(abspath external/drivers_nrf/twi_master/nrf_drv_twi.c) \
         $(abspath external/drivers_nrf/common/nrf_drv_common.c) \
-        $(abspath external/system_nrf51422.c) \
-        $(abspath external/nfc_adafruit_library/adafruit_pn532.c)
+        $(abspath external/system_nrf51422.c)
 
 #assembly files common to all targets
 ASM_SOURCE_FILES  = \
@@ -50,8 +50,7 @@ INC_PATHS = \
         -I$(abspath external/drivers_nrf/config) \
         -I$(abspath external/drivers_nrf/common) \
         -I$(abspath external/util_nrf) \
-        -I$(abspath external/CMSIS/Include) \
-        -I$(abspath external/nfc_adafruit_library)
+        -I$(abspath external/CMSIS/Include)
 
 DEFINES += \
         NRF51 \

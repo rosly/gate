@@ -31,13 +31,19 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
-#include "adafruit_pn532.h"
-#include "adafruit_pn532_config.h"
+#include "boards.h"
+#include "nrf_assert.h"
+#include "nordic_common.h"
 #include "nrf_gpio.h"
 #include "nrf_delay.h"
+/** @brief Identifier of the TWI instance. */
+#define MASTER_TWI_INST         0
 #include "nrf_drv_twi.h"
-//#include "app_error.h"
-#include "nordic_common.h"
+
+#include "pn532.h"
+
+#define PN532_IRQ            (ARDUINO_2_PIN)
+#define PN532_RESET          (ARDUINO_3_PIN)
 
 // NTAG2XX Page read/write restrictions.
 #define NTAG2XX_MAX_READ_PAGE_NUMBER  231
@@ -99,6 +105,7 @@
 
 // Default time-out for read_passive_target_id (time required for field scan).
 #define PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT    100
+#define PN532_DEFAULT_AUTH_TIMEOUT		1000
 
 // ACK frame format.
 static const uint8_t pn532_ack[] = {0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
@@ -106,7 +113,7 @@ static const uint8_t pn532_ack[] = {0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
 static const uint8_t pn532_rsp_firmware_ver[] = {0x00, 0xFF, 0x06, 0xFA, 0xD5, 0x03};
 
 
-static adafruit_pn532 pn532_object = {
+static pn532 pn532_object = {
     ._clk         = 0,
     ._miso        = 0,
     ._mosi        = 0,
@@ -132,7 +139,7 @@ static bool lib_initialized = false;
  *
  * This function configures specific pins to interact with the PN532 module.
  */
-static void adafruit_pn532_pin_setup(void)
+static void pn532_pin_setup(void)
 {
     nrf_gpio_cfg_input(pn532_object._irq, NRF_GPIO_PIN_NOPULL);
     // The reset pin in the AdaFruit NFC Shield is actually the PN532 reset indicator pin (RSTOUT_N)
@@ -150,9 +157,9 @@ static void adafruit_pn532_pin_setup(void)
  *
  * @param  current_sum[in]  Sum of all bytes used to calculate checksum.
  *
- * @retval Value of the checksum byte. 
+ * @retval Value of the checksum byte.
  */
-static uint8_t adafruit_pn532_cs_complement_calc(uint8_t current_sum)
+static uint8_t pn532_cs_complement_calc(uint8_t current_sum)
 {
     return ~current_sum + 1;
 }
@@ -167,21 +174,21 @@ static uint8_t adafruit_pn532_cs_complement_calc(uint8_t current_sum)
  * @retval NRF_SUCCESS             If the header was correct.
  * @retval NRF_ERROR_INVALID_DATA  Otherwise.
  */
-static ret_code_t adafruit_pn532_header_check(uint8_t const * p_buffer, uint8_t * p_length)
+static ret_code_t pn532_header_check(uint8_t const * p_buffer, uint8_t * p_length)
 {
     // Preamble
-    if ( (p_buffer[PN532_PREAMBLE_OFFSET] != PN532_PREAMBLE) || 
-         (p_buffer[PN532_STARTCODE1_OFFSET] != PN532_STARTCODE1) || 
+    if ( (p_buffer[PN532_PREAMBLE_OFFSET] != PN532_PREAMBLE) ||
+         (p_buffer[PN532_STARTCODE1_OFFSET] != PN532_STARTCODE1) ||
          (p_buffer[PN532_STARTCODE2_OFFSET] != PN532_STARTCODE2) )
     {
         PN532_LOG("Preamble missing\r\n");
         return NRF_ERROR_INVALID_DATA;
     }
     // Data length
-    if (p_buffer[PN532_LENGTH_CS_OFFSET] != 
-            adafruit_pn532_cs_complement_calc(p_buffer[PN532_LENGTH_OFFSET]))
+    if (p_buffer[PN532_LENGTH_CS_OFFSET] !=
+            pn532_cs_complement_calc(p_buffer[PN532_LENGTH_OFFSET]))
     {
-        PN532_LOG("Length check invalid: len: 0x%02x, cs: 02%02x\r\n", 
+        PN532_LOG("Length check invalid: len: 0x%02x, cs: 02%02x\r\n",
             p_buffer[PN532_LENGTH_OFFSET], p_buffer[PN532_LENGTH_CS_OFFSET]);
         return NRF_ERROR_INVALID_DATA;
     }
@@ -192,16 +199,16 @@ static ret_code_t adafruit_pn532_header_check(uint8_t const * p_buffer, uint8_t 
         PN532_LOG("Invalid direction byte: %02x\r\n", p_buffer[PN532_TFI_OFFSET]);
         return NRF_ERROR_INVALID_DATA;
     }
-    
+
     *p_length = p_buffer[PN532_LENGTH_OFFSET];
-    
+
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_init(bool force)
+ret_code_t pn532_init(bool force)
 {
     uint32_t ver_data;  // Variable to store firmware version read from PN532.
-    
+
     if (lib_initialized && !(force))
     {
         PN532_LOG("Library is already initialized\r\n");
@@ -219,21 +226,21 @@ ret_code_t adafruit_pn532_init(bool force)
         return NRF_ERROR_INTERNAL;
     }
 
-    ret_code_t err_code = adafruit_pn532_create_i2c();
+    ret_code_t err_code = pn532_create_i2c();
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed to create I2C, err_code = %d\r\n", err_code);
         return err_code;
     }
 
-    adafruit_pn532_pin_setup();
+    pn532_pin_setup();
 
     // Delay for PN532 to catch up with NRF.
     nrf_delay_ms(100);
 
     PN532_LOG("Looking for PN532\r\n");
 
-    err_code = adafruit_pn532_get_firmware_version(&ver_data);
+    err_code = pn532_get_firmware_version(&ver_data);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Didn't find PN53x board, err_code = %d\r\n", err_code);
@@ -241,17 +248,17 @@ ret_code_t adafruit_pn532_init(bool force)
     }
 
     PN532_LOG("Found chip PN5%02x\r\n", (ver_data >> 24) & 0xFF);
-    PN532_LOG("Firmware version %d.%d\r\n", (ver_data >> 16) & 0xFF, 
+    PN532_LOG("Firmware version %d.%d\r\n", (ver_data >> 16) & 0xFF,
                                             (ver_data >> 8)  & 0xFF);
 
-    err_code = adafruit_pn532_sam_config(SAMCONFIGURATION_MODE_NORMAL);
+    err_code = pn532_sam_config(SAMCONFIGURATION_MODE_NORMAL);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed to configure SAM, err_code = %d\r\n", err_code);
         return err_code;
     }
 
-    err_code = adafruit_pn532_set_passive_activation_retries(0xFF);
+    err_code = pn532_set_passive_activation_retries(0xFF);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed to set passive activation retries, err_code = %d\r\n", err_code);
@@ -265,7 +272,7 @@ ret_code_t adafruit_pn532_init(bool force)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_create_i2c()
+ret_code_t pn532_create_i2c()
 {
     PN532_LOG("Creating I2C\r\n");
 
@@ -321,13 +328,13 @@ void print_hex_char(const uint8_t * p_data, const uint32_t len)
     printf("\r\n");
 }
 
-ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response)
+ret_code_t pn532_get_firmware_version(uint32_t * p_response)
 {
     PN532_LOG("Trying to get the firmware version\r\n");
 
     pn532_packet_buf[0] = PN532_COMMAND_GETFIRMWAREVERSION;
 
-    ret_code_t err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf,
                                                   COMMAND_GETFIRMWAREVERSION_LENGTH,
                                                   1000);
 
@@ -338,7 +345,7 @@ ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response)
     }
 
     // Read data packet.
-    err_code = adafruit_pn532_read_data(pn532_packet_buf, REPLY_GETFIRMWAREVERSION_LENGTH);
+    err_code = pn532_read_data(pn532_packet_buf, REPLY_GETFIRMWAREVERSION_LENGTH);
 
     if (err_code != NRF_SUCCESS)
     {
@@ -365,12 +372,12 @@ ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t timeout)
+ret_code_t pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t timeout)
 {
     PN532_LOG("Trying to send command\r\n");
     PN532_LOG_HEX(p_cmd, cmd_len);
 
-    ret_code_t err_code = adafruit_pn532_write_command(p_cmd, cmd_len);
+    ret_code_t err_code = pn532_write_command(p_cmd, cmd_len);
 
     if (err_code != NRF_SUCCESS)
     {
@@ -379,16 +386,16 @@ ret_code_t adafruit_pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t ti
     }
 
     // Wait for ACK
-    if (!adafruit_pn532_waitready_ms(timeout))
+    if (!pn532_waitready_ms(timeout))
     {
         PN532_LOG("Failed while waiting\r\n");
         return NRF_ERROR_INTERNAL;
     }
 
-    return adafruit_pn532_read_ack();
+    return pn532_read_ack();
 }
 
-ret_code_t adafruit_pn532_sam_config(uint8_t mode)
+ret_code_t pn532_sam_config(uint8_t mode)
 {
     PN532_LOG("Attempting to configure SAM\r\n");
 
@@ -407,14 +414,14 @@ ret_code_t adafruit_pn532_sam_config(uint8_t mode)
     pn532_packet_buf[2] = 0x14; // Time-out value
     pn532_packet_buf[3] = SAMCONFIGURATION_IRQ_ENABLED;
 
-    err_code = adafruit_pn532_send_cmd(pn532_packet_buf, COMMAND_SAMCONFIGURATION_LENGTH, 1000);
+    err_code = pn532_send_cmd(pn532_packet_buf, COMMAND_SAMCONFIGURATION_LENGTH, 1000);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed while checking ACK! err_code = %d\r\n", err_code);
         return err_code;
     }
 
-    err_code = adafruit_pn532_read_data(pn532_packet_buf, REPLY_SAMCONFIGURATION_LENGTH);
+    err_code = pn532_read_data(pn532_packet_buf, REPLY_SAMCONFIGURATION_LENGTH);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed while reading data! err_code = %d\r\n", err_code);
@@ -431,14 +438,14 @@ ret_code_t adafruit_pn532_sam_config(uint8_t mode)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_power_down(void)
+ret_code_t pn532_power_down(void)
 {
     PN532_LOG("Powering down the PN532\r\n");
 
     pn532_packet_buf[0] = PN532_COMMAND_POWERDOWN;
     pn532_packet_buf[1] = POWERDOWN_WAKEUP_IRQ;
 
-    ret_code_t err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf,
                                                   COMMAND_POWERDOWN_BASE_LENGTH,
                                                   1000);
     if (err_code != NRF_SUCCESS)
@@ -447,7 +454,7 @@ ret_code_t adafruit_pn532_power_down(void)
         return err_code;
     }
 
-    err_code = adafruit_pn532_read_data(pn532_packet_buf, REPLY_POWERDOWN_LENGTH);
+    err_code = pn532_read_data(pn532_packet_buf, REPLY_POWERDOWN_LENGTH);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Failed while reading data! err_code = %d\r\n", err_code);
@@ -468,7 +475,7 @@ ret_code_t adafruit_pn532_power_down(void)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_wake_up(void)
+ret_code_t pn532_wake_up(void)
 {
     ret_code_t err_code;
 
@@ -493,7 +500,7 @@ ret_code_t adafruit_pn532_wake_up(void)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries)
+ret_code_t pn532_set_passive_activation_retries(uint8_t max_retries)
 {
     ret_code_t err_code;
 
@@ -505,7 +512,7 @@ ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries)
 
     PN532_LOG("Setting MxRtyPassiveActivation to %i\r\n", max_retries);
 
-    err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    err_code = pn532_send_cmd(pn532_packet_buf,
                                        COMMAND_RFCONFIGURATION_MAXRETRIES_LENGTH,
                                        1000);
 
@@ -518,19 +525,19 @@ ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
+ret_code_t pn532_read_passive_target_id(uint8_t card_baudrate,
                                                  uint8_t * p_uid,
                                                  uint8_t * p_uid_len,
-                                                 uint16_t  timeout)
+                                                 uint16_t timeout)
 {
     PN532_LOG("Trying to read passive target ID\r\n");
 
     if (p_uid == NULL || p_uid_len == NULL)
     {
-        PN532_LOG("NULL pointers passed as arguments to adafruit_pn532_read_passive_target_id.");
+        PN532_LOG("NULL pointers passed as arguments to pn532_read_passive_target_id.");
         return NRF_ERROR_INVALID_PARAM;
     }
-    
+
     if (card_baudrate != PN532_MIFARE_ISO14443A_BAUD)
     {
         PN532_LOG("Only ISO14443 type A cards are supported.\r\n");
@@ -541,7 +548,7 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
     pn532_packet_buf[1] = 1;    // Maximum number of targets.
     pn532_packet_buf[2] = card_baudrate;
 
-    ret_code_t err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf,
                                                   COMMAND_INLISTPASSIVETARGET_BASE_LENGTH,
                                                   PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT);
     if (err_code != NRF_SUCCESS)
@@ -558,13 +565,13 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
         timeout = PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT;
     }
 
-    if (!adafruit_pn532_waitready_ms(timeout))
+    if (!pn532_waitready_ms(timeout))
     {
         PN532_LOG("IRQ time-out, no tag in range\r\n");
         return NRF_ERROR_TIMEOUT;
     }
 
-    err_code = adafruit_pn532_read_data(pn532_packet_buf,
+    err_code = pn532_read_data(pn532_packet_buf,
                                         REPLY_INLISTPASSIVETARGET_106A_TARGET_LENGTH);
     if (err_code != NRF_SUCCESS)
     {
@@ -604,7 +611,7 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
 }
 
 
-ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
+ret_code_t pn532_in_data_exchange(uint8_t * p_send,
                                            uint8_t   send_len,
                                            uint8_t * p_response,
                                            uint8_t * p_response_len)
@@ -630,7 +637,7 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
     pn532_packet_buf[1] = pn532_object._inListedTag;
     memcpy(pn532_packet_buf + 2, p_send, send_len);
 
-    ret_code_t err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf,
                                                   send_len + 2,
                                                   1000);
     if (err_code != NRF_SUCCESS)
@@ -639,13 +646,13 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
         return err_code;
     }
 
-    if (!adafruit_pn532_waitready_ms(1000))
+    if (!pn532_waitready_ms(1000))
     {
         PN532_LOG("Response never received for ADPU\r\n");
         return NRF_ERROR_INTERNAL;
     }
 
-    err_code = adafruit_pn532_read_data(pn532_packet_buf,
+    err_code = pn532_read_data(pn532_packet_buf,
                                         *p_response_len + REPLY_INDATAEXCHANGE_BASE_LENGTH);
                                                         // + 2 for command and status byte
     if (err_code != NRF_SUCCESS)
@@ -655,17 +662,17 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
     }
 
     uint8_t length = 0;
-    err_code = adafruit_pn532_header_check(pn532_packet_buf, &length);
+    err_code = pn532_header_check(pn532_packet_buf, &length);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Invalid frame header\r\n");
         return err_code;
     }
-    
+
     if ( (pn532_packet_buf[PN532_TFI_OFFSET] != PN532_PN532TOHOST) ||
          (pn532_packet_buf[PN532_DATA_OFFSET] != PN532_COMMAND_INDATAEXCHANGE + 1) )
     {
-        PN532_LOG("Don't know how to handle this command: %02x\r\n", 
+        PN532_LOG("Don't know how to handle this command: %02x\r\n",
             pn532_packet_buf[PN532_DATA_OFFSET]);
         return NRF_ERROR_INTERNAL;
     }
@@ -673,7 +680,7 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
     // Check InDataExchange Status byte.
     if ((pn532_packet_buf[PN532_DATA_OFFSET + 1] & PN532_STATUS_ERROR_MASK) != 0x00)
     {
-        PN532_LOG("Status code indicates an error, %02x\r\n", 
+        PN532_LOG("Status code indicates an error, %02x\r\n",
             pn532_packet_buf[PN532_DATA_OFFSET + 1]);
         return NRF_ERROR_INTERNAL;
     }
@@ -692,154 +699,14 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
     return NRF_SUCCESS;
 }
 
-
-ret_code_t adafruit_pn532_ntag2xx_read_page(uint8_t page, uint8_t * p_buffer)
-{
-    PN532_LOG("Trying to read page %u\r\n", page);
-
-    ret_code_t err_code;
-
-    uint8_t cmd_buf[2];
-    uint8_t response_len = MIFARE_PAGE_SIZE;
-
-    cmd_buf[0] = MIFARE_CMD_READ;
-    cmd_buf[1] = page;
-
-    err_code = adafruit_pn532_in_data_exchange(cmd_buf, 2, p_buffer, &response_len);
-    if (err_code != NRF_SUCCESS)
-    {
-        PN532_LOG("Failed to read page %d\r\n", page);
-        return err_code;
-    }
-
-    PN532_LOG("Page %d : ", page);
-    PN532_LOG_HEX(p_buffer, MIFARE_PAGE_SIZE);
-
-    return NRF_SUCCESS;
-}
-
-ret_code_t adafruit_pn532_ntag2xx_write_page(uint8_t page, uint8_t * p_data)
-{
-    if ( (page < NTAG2XX_MIN_WRITE_PAGE_NUMBER) || 
-         (page > NTAG2XX_MAX_WRITE_PAGE_NUMBER) )
-    {
-        PN532_LOG("Page value out of range, page = %d\r\n", page);
-        return NRF_ERROR_INVALID_PARAM;
-    }
-
-    PN532_LOG("Trying to write 4 uint8_t page %u\r\n", page);
-
-    uint8_t write_buf[MIFARE_MAX_DATA_EXCHANGE];
-    uint8_t response_len = MIFARE_MAX_DATA_EXCHANGE;
-
-    write_buf[0] = MIFARE_ULTRALIGHT_CMD_WRITE;
-    write_buf[1] = page;
-    memcpy(write_buf + 2, p_data, MIFARE_PAGE_SIZE);
-
-    ret_code_t err_code = adafruit_pn532_in_data_exchange(write_buf, 2 + MIFARE_PAGE_SIZE,
-            write_buf, &response_len);
-    if (err_code != NRF_SUCCESS)
-    {
-        PN532_LOG("Failed to write page %d\r\n", page);
-        return err_code;
-    }
-
-    return NRF_SUCCESS;
-}
-
-
-ret_code_t adafruit_pn532_ntag2xx_write_ndef_uri(uint8_t uri_id, char * p_url, uint8_t data_len)
-{
-    PN532_LOG("Trying to write URI %d\r\n", uri_id);
-
-    uint8_t page_buf[4] = {0};
-    uint8_t uri_len = strlen(p_url);
-    uint8_t page_header[] =
-    {
-        0x00, 0x03, uri_len + 5, 0xD1,
-        0x01, uri_len + 1, 0x55, uri_id
-    };
-    uint8_t page_header_len = sizeof(page_header);
-
-    if ( (uri_len < 1) || (uri_len + 1 > (data_len - page_header_len)))
-    {
-        PN532_LOG("URL is too long for provided data length\r\n");
-        return NRF_ERROR_INVALID_PARAM;
-    }
-
-    ret_code_t err_code;
-    int32_t i;
-    uint8_t current_page = 4;
-    for (i = 0; i < 2; i++)
-    {
-        memcpy(page_buf, page_header + 4*i, MIFARE_PAGE_SIZE);
-        err_code = adafruit_pn532_ntag2xx_write_page(current_page, page_buf);
-        if (err_code != NRF_SUCCESS)
-        {
-            PN532_LOG("Failed to write URI page %d, err_code = %d\r\n", current_page, err_code);
-            return err_code;
-        }
-        current_page++;
-    }
-
-    char    * url_ptr = p_url;
-    uint8_t   len_to_cpy = 0;
-    while (uri_len > 0)
-    {
-        // Prepare length of the chunk to copy.
-        if (uri_len < MIFARE_PAGE_SIZE)
-        {
-            len_to_cpy = uri_len;
-            // If do not copy a full page, prepare the buffer.
-            memset(page_buf, 0x00, MIFARE_PAGE_SIZE);
-            page_buf[len_to_cpy] = 0xFE; // Terminator block.
-        }
-        else
-        {
-            len_to_cpy = MIFARE_PAGE_SIZE;
-        }
-
-        memcpy(page_buf, url_ptr, len_to_cpy);
-
-        err_code = adafruit_pn532_ntag2xx_write_page(current_page, page_buf);
-        if (err_code != NRF_SUCCESS)
-        {
-            PN532_LOG("Failed to write page %d, err_code = %d\r\n", current_page, err_code);
-            return err_code;
-        }
-
-        current_page++;
-
-        // If the last page was sent, and there was no chance to insert TLV Terminator block,
-        // send another page with Terminator block in it.
-        if (uri_len == MIFARE_PAGE_SIZE)
-        {
-            memset(page_buf, 0x00, MIFARE_PAGE_SIZE);
-            page_buf[0] = 0xFE;
-            err_code = adafruit_pn532_ntag2xx_write_page(current_page, page_buf);
-            if (err_code != NRF_SUCCESS)
-            {
-                PN532_LOG("Failed to write page %d, err_code = %d\r\n", current_page, err_code);
-                return err_code;
-            }
-            current_page++;
-        }
-
-        uri_len -= len_to_cpy;
-        url_ptr += len_to_cpy;
-    }
-
-    return NRF_SUCCESS;
-}
-
-ret_code_t adafruit_pn532_read_ack(void)
+ret_code_t pn532_read_ack(void)
 {
     PN532_LOG("Reading ACK\r\n");
 
     uint8_t ack_buf[PN532_ACK_PACKET_SIZE];
     ret_code_t err_code;
 
-    err_code = adafruit_pn532_read_data(ack_buf, PN532_ACK_PACKET_SIZE);
+    err_code = pn532_read_data(ack_buf, PN532_ACK_PACKET_SIZE);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("ACK read failed\r\n");
@@ -849,7 +716,7 @@ ret_code_t adafruit_pn532_read_ack(void)
     // Wait for irq to be taken off.
     for (uint16_t i = 0; i < 1000; i++)
     {
-        if (!adafruit_pn532_is_ready())
+        if (!pn532_is_ready())
         {
             break;
         }
@@ -864,30 +731,30 @@ ret_code_t adafruit_pn532_read_ack(void)
     return NRF_SUCCESS;
 }
 
-bool adafruit_pn532_is_ready(void)
+bool pn532_is_ready(void)
 {
     return nrf_gpio_pin_read(pn532_object._irq) == 0;
 }
 
-bool adafruit_pn532_waitready_ms(uint16_t timeout)
+bool pn532_waitready_ms(uint16_t timeout)
 {
     uint16_t timer = 0;
     bool result = false;
 
-    result = adafruit_pn532_is_ready();
+    result = pn532_is_ready();
     while ((!result) && (timer < timeout))
     {
         timer += 1;
         nrf_delay_ms(1);
-        result = adafruit_pn532_is_ready();
+        result = pn532_is_ready();
     }
 
     return result;
 }
 
-ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n)
+ret_code_t pn532_read_data(uint8_t * p_buff, uint8_t n)
 {
-    if (!adafruit_pn532_waitready_ms(PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT))
+    if (!pn532_waitready_ms(PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT))
     {
         return NRF_ERROR_INTERNAL;
     }
@@ -921,7 +788,7 @@ ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
+ret_code_t pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
 {
     ret_code_t err_code;
     uint8_t    checksum;
@@ -943,9 +810,9 @@ ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
     pn532_rxtx_buffer[1] = PN532_STARTCODE1;
     pn532_rxtx_buffer[2] = PN532_STARTCODE2;
     pn532_rxtx_buffer[3] = cmd_len + 1;    // Data length + TFI byte.
-    pn532_rxtx_buffer[4] = adafruit_pn532_cs_complement_calc(cmd_len + 1);
+    pn532_rxtx_buffer[4] = pn532_cs_complement_calc(cmd_len + 1);
     pn532_rxtx_buffer[5] = PN532_HOSTTOPN532;
-    
+
     // Copy the payload data.
     memcpy(pn532_rxtx_buffer + HEADER_SEQUENCE_LENGTH, p_cmd, cmd_len);
 
@@ -955,15 +822,15 @@ ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
     {
         checksum += p_cmd[i];
     }
-    checksum = adafruit_pn532_cs_complement_calc(checksum);
+    checksum = pn532_cs_complement_calc(checksum);
 
     // Compose checksum part of the command frame.
     pn532_rxtx_buffer[HEADER_SEQUENCE_LENGTH + cmd_len]     = checksum;
     pn532_rxtx_buffer[HEADER_SEQUENCE_LENGTH + cmd_len + 1] = PN532_POSTAMBLE;
-    
+
     PN532_LOG("Sending command\r\n");
     PN532_LOG_HEX(pn532_rxtx_buffer, cmd_len + PN532_FRAME_OVERHEAD);
-    
+
     err_code = nrf_drv_twi_tx(&m_twi_master, PN532_I2C_ADDRESS, pn532_rxtx_buffer,
                           cmd_len + PN532_FRAME_OVERHEAD, false);
     if (err_code != NRF_SUCCESS)
@@ -986,7 +853,7 @@ ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
  *  @retval    NRF_ERROR_INVALID_PARAM  If the value in field_conf was invalid.
  *  @retval    Other                    Otherwise.
  */
-static ret_code_t adafruit_pn532_switch_field(uint8_t field_conf)
+static ret_code_t pn532_switch_field(uint8_t field_conf)
 {
     ret_code_t err_code;
 
@@ -1000,7 +867,7 @@ static ret_code_t adafruit_pn532_switch_field(uint8_t field_conf)
     pn532_packet_buf[1] = RFCONFIGURATION_CFGITEM_RFFIELD;
     pn532_packet_buf[2] = field_conf;
 
-    err_code = adafruit_pn532_send_cmd(pn532_packet_buf,
+    err_code = pn532_send_cmd(pn532_packet_buf,
                                        COMMAND_RFCONFIGURATION_RFFIELD_LENGTH ,
                                        1000);
     if (err_code != NRF_SUCCESS)
@@ -1009,7 +876,7 @@ static ret_code_t adafruit_pn532_switch_field(uint8_t field_conf)
         return err_code;
     }
 
-    if (!adafruit_pn532_waitready_ms(PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT))
+    if (!pn532_waitready_ms(PN532_DEFAULT_WAIT_FOR_READY_TIMEOUT))
     {
         return NRF_ERROR_INTERNAL;
     }
@@ -1017,12 +884,275 @@ static ret_code_t adafruit_pn532_switch_field(uint8_t field_conf)
     return NRF_SUCCESS;
 }
 
-ret_code_t adafruit_pn532_field_on(void)
+ret_code_t pn532_field_on(void)
 {
-    return adafruit_pn532_switch_field(RFCONFIGURATION_RFFIELD_ON);
+    return pn532_switch_field(RFCONFIGURATION_RFFIELD_ON);
 }
 
-ret_code_t adafruit_pn532_field_off(void)
+ret_code_t pn532_field_off(void)
 {
-    return adafruit_pn532_switch_field(RFCONFIGURATION_RFFIELD_OFF);
+    return pn532_switch_field(RFCONFIGURATION_RFFIELD_OFF);
+}
+
+/***** Mifare Classic Functions ******/
+
+bool pn532_mifareclassic_first_block(uint8_t block)
+{
+    // Test if we are in the small or big sectors
+    if (block < 128)
+      return ((block) % 4 == 0);
+    else
+      return ((block) % 16 == 0);
+}
+
+bool pn532_mifareclassic_tailer_block(uint8_t block)
+{
+    // Test if we are in the small or big sectors
+    if (block < 128)
+      return ((block + 1) % 4 == 0);
+    else
+      return ((block + 1) % 16 == 0);
+}
+
+/** @brief Function authenticate access to memory block 
+ *
+ * See section 7.3.8 of the PN532 User Manual for more information on sending
+ * MIFARE and other commands.
+ *
+ * @param  uid           Pointer to a byte array containing the card UID
+ * @param  uid_len        The length (in bytes) of the card's UID (Should
+ *                       be 4 for MIFARE Classic)
+ * @param  block   The block number to authenticate.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  key_idx     Which key type to use during authentication
+ *                       (0 = MIFARE_CMD_AUTH_A, 1 = MIFARE_CMD_AUTH_B)
+ * @param  key_data       Pointer to a byte array containing the 6 byte key value
+ *
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_authenticateblock(
+    uint8_t * uid, uint8_t uid_len, uint8_t block,
+    uint8_t key_idx, const uint8_t key_data[6])
+{
+    ret_code_t ret_code;
+    uint8_t len;
+    uint8_t auth_buf[16];
+
+    PN532_LOG("Trying to authenticate card\r\n");
+
+    // Prepare the authentication command //
+    auth_buf[0] = (key_idx) ? MIFARE_CMD_AUTH_B : MIFARE_CMD_AUTH_A;
+    auth_buf[1] = block;                          /* Block Number (1K = 0..63, 4K = 0..255 */
+    memcpy(auth_buf + 2, key_data, 6);            /* authentication key */
+    ASSERT(sizeof(auth_buf) < (8 + uid_len));
+    memcpy(auth_buf + 8, uid, uid_len);           /* card ID */
+
+    /* Send the command */
+    len = sizeof(auth_buf);
+    ret_code = pn532_in_data_exchange(auth_buf, 8 + uid_len, auth_buf, &len);
+
+    if (ret_code != NRF_SUCCESS)
+    {
+        PN532_LOG("Auth request error, err_code = %d\r\n", err_code);
+        return ret_code;
+    }
+
+    return 0;
+}
+
+/** @brief Reads an entire 16-byte data block at the specified block address.
+ *
+ * @param  block   The block number to authenticate.  (0..63 for
+ *                 1KB cards, and 0..255 for 4KB cards).
+ * @param  data    Pointer to the byte array that will hold the
+ *                 retrieved data (if any)
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_len)
+{
+    ret_code_t ret_code;
+    uint8_t len;
+    uint8_t readop_buf[26];
+
+    PN532_LOG("Trying to read 16 bytes from block %u\r\n", block);
+
+    /* Prepare the command */
+    readop_buf[0] = MIFARE_CMD_READ;  /* Mifare Read command = 0x30 */
+    readop_buf[1] = block;            /* Block Number (0..63 for 1K, 0..255 for 4K) */
+
+    /* Send the command */
+    len = sizeof(readop_buf);
+    ret_code = pn532_in_data_exchange(readop_buf, 2, readop_buf, &len);
+
+    if ((ret_code != NRF_SUCCESS) || (len != 16))
+    {
+        PN532_LOG("Read block error, err_code = %d\r\n", err_code);
+        return ret_code;
+    }
+
+    if (len > data_len)
+	    len = data_len;
+    memcpy(data, readop_buf, len);
+
+    return NRF_SUCCESS;
+}
+
+/***** NTAG2xx Functions ******/
+
+/**************************************************************************/
+/*!
+    Tries to read an entire 4-byte page at the specified address.
+    @param  page        The page number (0..63 in most cases)
+    @param  p_buffer      Pointer to the byte array that will hold the
+                        retrieved data (if any)
+*/
+ret_code_t pn532_ntag2xx_read_page(uint8_t page, uint8_t * p_buffer)
+{
+    ret_code_t err_code;
+
+    uint8_t cmd_buf[2];
+    uint8_t response_len = MIFARE_PAGE_SIZE;
+
+    // TAG Type       PAGES   USER START    USER STOP
+    // --------       -----   ----------    ---------
+    // NTAG 203       42      4             39
+    // NTAG 213       45      4             39
+    // NTAG 215       135     4             129
+    // NTAG 216       231     4             225
+
+    if (page >= NTAG2XX_MAX_READ_PAGE_NUMBER)
+    {
+        PN532_LOG("Page value out of range");
+        return NRF_ERROR_INVALID_PARAM;
+    }
+
+    PN532_LOG("Trying to read page %u\r\n", page);
+
+    cmd_buf[0] = MIFARE_CMD_READ;
+    cmd_buf[1] = page;
+
+    err_code = pn532_in_data_exchange(cmd_buf, 2, p_buffer, &response_len);
+    if (err_code != NRF_SUCCESS)
+    {
+        PN532_LOG("Failed to read page %d\r\n", page);
+        return err_code;
+    }
+
+    PN532_LOG("Page %d : ", page);
+    PN532_LOG_HEX(p_buffer, MIFARE_PAGE_SIZE);
+
+    return NRF_SUCCESS;
+}
+
+ret_code_t pn532_ntag2xx_write_page(uint8_t page, uint8_t * p_data)
+{
+    if ( (page < NTAG2XX_MIN_WRITE_PAGE_NUMBER) ||
+         (page > NTAG2XX_MAX_WRITE_PAGE_NUMBER) )
+    {
+        PN532_LOG("Page value out of range, page = %d\r\n", page);
+        return NRF_ERROR_INVALID_PARAM;
+    }
+
+    PN532_LOG("Trying to write 4 uint8_t page %u\r\n", page);
+
+    uint8_t write_buf[MIFARE_MAX_DATA_EXCHANGE];
+    uint8_t response_len = MIFARE_MAX_DATA_EXCHANGE;
+
+    write_buf[0] = MIFARE_ULTRALIGHT_CMD_WRITE;
+    write_buf[1] = page;
+    memcpy(write_buf + 2, p_data, MIFARE_PAGE_SIZE);
+
+    ret_code_t err_code = pn532_in_data_exchange(write_buf, 2 + MIFARE_PAGE_SIZE,
+            write_buf, &response_len);
+    if (err_code != NRF_SUCCESS)
+    {
+        PN532_LOG("Failed to write page %d\r\n", page);
+        return err_code;
+    }
+
+    return NRF_SUCCESS;
+}
+
+ret_code_t pn532_ntag2xx_write_ndef_uri(uint8_t uri_id, char * p_url, uint8_t data_len)
+{
+    PN532_LOG("Trying to write URI %d\r\n", uri_id);
+
+    uint8_t page_buf[4] = {0};
+    uint8_t uri_len = strlen(p_url);
+    uint8_t page_header[] =
+    {
+        0x00, 0x03, uri_len + 5, 0xD1,
+        0x01, uri_len + 1, 0x55, uri_id
+    };
+    uint8_t page_header_len = sizeof(page_header);
+
+    if ( (uri_len < 1) || (uri_len + 1 > (data_len - page_header_len)))
+    {
+        PN532_LOG("URL is too long for provided data length\r\n");
+        return NRF_ERROR_INVALID_PARAM;
+    }
+
+    ret_code_t err_code;
+    int32_t i;
+    uint8_t current_page = 4;
+    for (i = 0; i < 2; i++)
+    {
+        memcpy(page_buf, page_header + 4*i, MIFARE_PAGE_SIZE);
+        err_code = pn532_ntag2xx_write_page(current_page, page_buf);
+        if (err_code != NRF_SUCCESS)
+        {
+            PN532_LOG("Failed to write URI page %d, err_code = %d\r\n", current_page, err_code);
+            return err_code;
+        }
+        current_page++;
+    }
+
+    char    * url_ptr = p_url;
+    uint8_t   len_to_cpy = 0;
+    while (uri_len > 0)
+    {
+        // Prepare length of the chunk to copy.
+        if (uri_len < MIFARE_PAGE_SIZE)
+        {
+            len_to_cpy = uri_len;
+            // If do not copy a full page, prepare the buffer.
+            memset(page_buf, 0x00, MIFARE_PAGE_SIZE);
+            page_buf[len_to_cpy] = 0xFE; // Terminator block.
+        }
+        else
+        {
+            len_to_cpy = MIFARE_PAGE_SIZE;
+        }
+
+        memcpy(page_buf, url_ptr, len_to_cpy);
+
+        err_code = pn532_ntag2xx_write_page(current_page, page_buf);
+        if (err_code != NRF_SUCCESS)
+        {
+            PN532_LOG("Failed to write page %d, err_code = %d\r\n", current_page, err_code);
+            return err_code;
+        }
+
+        current_page++;
+
+        // If the last page was sent, and there was no chance to insert TLV Terminator block,
+        // send another page with Terminator block in it.
+        if (uri_len == MIFARE_PAGE_SIZE)
+        {
+            memset(page_buf, 0x00, MIFARE_PAGE_SIZE);
+            page_buf[0] = 0xFE;
+            err_code = pn532_ntag2xx_write_page(current_page, page_buf);
+            if (err_code != NRF_SUCCESS)
+            {
+                PN532_LOG("Failed to write page %d, err_code = %d\r\n", current_page, err_code);
+                return err_code;
+            }
+            current_page++;
+        }
+
+        uri_len -= len_to_cpy;
+        url_ptr += len_to_cpy;
+    }
+
+    return NRF_SUCCESS;
 }

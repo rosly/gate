@@ -45,13 +45,14 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <sdk_errors.h>
 
 /** @file
  *  @brief Adafruit PN532 NFC Shield library for reading and writing tags.
  *
- *  @defgroup nrf_external_adafruit_pn532 Adafruit PN532 NFC Shield library
+ *  @defgroup nrf_external_pn532 Adafruit PN532 NFC Shield library
  *  @{
  *  @ingroup app_common
  *  @brief Adafruit PN532 NFC Shield library for reading and writing tags.
@@ -66,7 +67,7 @@
  */
 
 /**
- * @defgroup nrf_external_adafruit_pn532_frame_header Frame header
+ * @defgroup nrf_external_pn532_frame_header Frame header
  * @brief Macros related to the frame header and checksum parts.
  *
  *
@@ -79,7 +80,7 @@
 /** @} */
 
 /**
- * @defgroup nrf_external_adafruit_pn532_frame_tokens Frame tokens and offsets
+ * @defgroup nrf_external_pn532_frame_tokens Frame tokens and offsets
  * @brief Macros related to frame tokens and offsets.
  *
  * @{
@@ -111,7 +112,7 @@
  */
 
 /**
- * @defgroup nrf_external_adafruit_pn532_frame_direction_identifiers Frame direction identifiers
+ * @defgroup nrf_external_pn532_frame_direction_identifiers Frame direction identifiers
  * @brief Macro codes identifying the communication direction.
  *
  * Each frame contains one of these codes to identify whether this frame
@@ -123,7 +124,7 @@
 /** @} */
 
 /**
- * @defgroup nrf_external_adafruit_pn532_command_codes Command codes
+ * @defgroup nrf_external_pn532_command_codes Command codes
  * @brief Macros for the available command codes.
  *
  * The following command codes are available in the Adafruit PN532 Shield.
@@ -164,7 +165,7 @@
 /** @} */
 
 /**
- * @defgroup nrf_external_adafruit_pn532_mifare_command_codes Mifare command codes
+ * @defgroup nrf_external_pn532_mifare_command_codes Mifare command codes
  * @brief Macros for the available Mifare command codes.
  *
  * The following Mifare command codes are available in the Adafruit PN532 Shield.
@@ -191,6 +192,9 @@
 /// Size of the buffer used for sending commands and storing responses.
 #define PN532_PACKBUFFSIZ                   (64)
 
+#define MIFARE_AUTH_KEY_A                   (0)
+#define MIFARE_AUTH_KEY_B                   (1)
+
 /**
  * @brief Information about the communication between the host and the Adafruit PN532 Shield.
  */
@@ -208,7 +212,7 @@ typedef struct
     uint8_t _inListedTag;               //!< Tag number of inlisted tag.
     bool    _usingSPI;                  //!< True if using SPI, false if using I2C.
     bool    _hardwareSPI;               //!< True if using hardware SPI, false if using software SPI.
-} adafruit_pn532;
+} pn532;
 
 /**
  * @name Functions used for initialization
@@ -224,7 +228,7 @@ typedef struct
  *   @retval    NRF_SUCCESS     If the communication was initialized successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_init(bool force);
+ret_code_t pn532_init(bool force);
 
 /**  @brief Function for creating a new PN532 object using I2C.
  *
@@ -233,7 +237,7 @@ ret_code_t adafruit_pn532_init(bool force);
  *   @retval    NRF_SUCCESS     If the object was created successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_create_i2c(void);
+ret_code_t pn532_create_i2c(void);
 /** @} */
 
 /**
@@ -251,21 +255,21 @@ ret_code_t adafruit_pn532_create_i2c(void);
  *   @retval    NRF_SUCCESS     If the SAM was configured successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_sam_config(uint8_t mode);
+ret_code_t pn532_sam_config(uint8_t mode);
 
 /**  @brief Function for entering power-down mode with I2C as wake-up source.
  *
  *   @retval    NRF_SUCCESS     If power-down mode was entered successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_power_down(void);
+ret_code_t pn532_power_down(void);
 
 /**  @brief Function for waking up the PN532 Shield from power-down mode.
  *
  *   @retval    NRF_SUCCESS     If the PN532 Shield woke up successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_wake_up(void);
+ret_code_t pn532_wake_up(void);
 
 /**  @brief Function for checking the firmware version of the PN532 chip.
  *
@@ -274,7 +278,7 @@ ret_code_t adafruit_pn532_wake_up(void);
  *   @retval        NRF_SUCCESS     If the function completed successfully. Otherwise,
  *                                  an error code is returned.
  */
-ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response);
+ret_code_t pn532_get_firmware_version(uint32_t * p_response);
 
 /**  @brief Function for sending a command and waiting a specified period for the ACK.
  *
@@ -285,21 +289,21 @@ ret_code_t adafruit_pn532_get_firmware_version(uint32_t * p_response);
  *   @retval    NRF_SUCCESS            If the command was sent successfully. Otherwise,
  *                                     an error code is returned.
  */
-ret_code_t adafruit_pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t timeout);
+ret_code_t pn532_send_cmd(uint8_t * p_cmd, uint8_t cmd_len, uint16_t timeout);
 
 /**  @brief Function for enabling the PN532 RF field.
  *
  *   @retval    NRF_SUCCESS     If the RF field was enabled successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_field_on(void);
+ret_code_t pn532_field_on(void);
 
 /**  @brief Function for disabling the PN532 RF field.
  *
  *   @retval    NRF_SUCCESS     If the RF field was disabled successfully. Otherwise,
  *                              an error code is returned.
  */
-ret_code_t adafruit_pn532_field_off(void);
+ret_code_t pn532_field_off(void);
 /** @} */
 
 /**
@@ -310,7 +314,7 @@ ret_code_t adafruit_pn532_field_off(void);
 /**  @brief Function for detecting an ISO14443A target presence in the RF field.
  *
  *   This function enables the RF field and scans for ISO14443A targets present
- *   in the field. The number of scan retries is set by the @ref adafruit_pn532_set_passive_activation_retries 
+ *   in the field. The number of scan retries is set by the @ref pn532_set_passive_activation_retries 
  *   function. By default, the maximum number of retries is set to unlimited, which means
  *   that the PN532 Shield scans for targets until it finds one or the scan is 
  *   canceled. The @p timeout parameter specifies the time-out of the scan. If it is
@@ -334,7 +338,7 @@ ret_code_t adafruit_pn532_field_off(void);
  *   @retval        NRF_SUCCESS           If the function completed successfully. Otherwise,
  *                                        an error code is returned.
  */
-ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
+ret_code_t pn532_read_passive_target_id(uint8_t   card_baudrate,
                                                  uint8_t * p_uid,
                                                  uint8_t * p_uid_len,
                                                  uint16_t  timeout);
@@ -352,7 +356,7 @@ ret_code_t adafruit_pn532_read_passive_target_id(uint8_t   card_baudrate,
  *   @retval        NRF_SUCCESS            If the function completed successfully. Otherwise,
  *                                         an error code is returned.
  */
-ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
+ret_code_t pn532_in_data_exchange(uint8_t * p_send,
                                            uint8_t   send_len,
                                            uint8_t * p_response,
                                            uint8_t * p_response_len);
@@ -368,7 +372,7 @@ ret_code_t adafruit_pn532_in_data_exchange(uint8_t * p_send,
  *   @retval        NRF_SUCCESS         If MxRtyPassiveActivation was set successfully. Otherwise,
  *                                      an error code is returned.
  */
-ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries);
+ret_code_t pn532_set_passive_activation_retries(uint8_t max_retries);
 
 /** @} */
 
@@ -388,7 +392,7 @@ ret_code_t adafruit_pn532_set_passive_activation_retries(uint8_t max_retries);
  *   @retval        NRF_SUCCESS           If the data was read successfully. Otherwise,
  *                                        an error code is returned.
  */
-ret_code_t adafruit_pn532_ntag2xx_read_page(uint8_t page, uint8_t * p_buffer);
+ret_code_t pn532_ntag2xx_read_page(uint8_t page, uint8_t * p_buffer);
 
 /**  @brief Function for writing an entire 4-byte page at the specified block address.
  *
@@ -401,7 +405,7 @@ ret_code_t adafruit_pn532_ntag2xx_read_page(uint8_t page, uint8_t * p_buffer);
  *   @retval        NRF_SUCCESS         If the data was written successfully. Otherwise,
  *                                      an error code is returned.
  */
-ret_code_t adafruit_pn532_ntag2xx_write_page(uint8_t page, uint8_t * p_data);
+ret_code_t pn532_ntag2xx_write_page(uint8_t page, uint8_t * p_data);
 
 /**  @brief Function for writing an NDEF URI record starting at the specified page (4..nn).
  *
@@ -416,7 +420,7 @@ ret_code_t adafruit_pn532_ntag2xx_write_page(uint8_t page, uint8_t * p_data);
  *   @retval        NRF_SUCCESS        If the record was written successfully. Otherwise,
  *                                     an error code is returned.
  */
-ret_code_t adafruit_pn532_ntag2xx_write_ndef_uri(uint8_t uri_id, char * p_url, uint8_t data_len);
+ret_code_t pn532_ntag2xx_write_ndef_uri(uint8_t uri_id, char * p_url, uint8_t data_len);
 
 /** @} */
 
@@ -455,7 +459,7 @@ void print_hex_char(const uint8_t * p_data, const uint32_t len);
  *    @retval True        If the PN532 Shield is ready with a response.
  *    @retval False       Otherwise.
  */
-bool adafruit_pn532_is_ready(void);
+bool pn532_is_ready(void);
 
 /**  @brief Function for waiting until the PN532 Shield is ready.
  *
@@ -464,13 +468,13 @@ bool adafruit_pn532_is_ready(void);
  *   @retval  True        If the PN532 Shield is ready.
  *   @retval  False       Otherwise.
  */
-bool adafruit_pn532_waitready_ms(uint16_t timeout);
+bool pn532_waitready_ms(uint16_t timeout);
 
 /**  @brief Function for reading the ACK frame.
  *
  *   @retval  NRF_SUCCESS       If the ACK frame was read. Otherwise, an error code is returned.
  */
-ret_code_t adafruit_pn532_read_ack(void);
+ret_code_t pn532_read_ack(void);
 
 /** @brief Function for reading n bytes of data from the PN532 Shield via I2C.
  *
@@ -480,7 +484,7 @@ ret_code_t adafruit_pn532_read_ack(void);
  *   @retval        NRF_SUCCESS            If the data was read successfully. Otherwise,
  *                                         an error code is returned.
  */
-ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n);
+ret_code_t pn532_read_data(uint8_t * p_buff, uint8_t n);
 
 /**  @brief Function for writing a command to the PN532 Shield.
  *
@@ -493,7 +497,48 @@ ret_code_t adafruit_pn532_read_data(uint8_t * p_buff, uint8_t n);
  *   @retval     NRF_SUCCESS        If the command was written successfully. Otherwise,
  *                                  an error code is returned.
  */
-ret_code_t adafruit_pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len);
+ret_code_t pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len);
+
+
+/** @brief Function indicates whether the specified block number is the first
+ *         block in the sector (block 0 relative to the current sector)
+ */
+bool pn532_mifareclassic_first_block(uint8_t block);
+
+/** @brief Function indicates whether the specified block number is the sector trailer
+ */
+bool pn532_mifareclassic_tailer_block(uint8_t block);
+
+/** @brief Function authenticate access to memory block 
+ *
+ * See section 7.3.8 of the PN532 User Manual for more information on sending
+ * MIFARE and other commands.
+ *
+ * @param  uid           Pointer to a byte array containing the card UID
+ * @param  uid_len        The length (in bytes) of the card's UID (Should
+ *                       be 4 for MIFARE Classic)
+ * @param  block   The block number to authenticate.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  key_idx     Which key type to use during authentication
+ *                       (0 = MIFARE_CMD_AUTH_A, 1 = MIFARE_CMD_AUTH_B)
+ * @param  key_data       Pointer to a byte array containing the 6 byte key value
+ *
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_authenticateblock(
+    uint8_t *uid, uint8_t uid_len, uint8_t block,
+    uint8_t key_idx, const uint8_t key_data[6]);
+
+/** @brief Reads an entire 16-byte data block at the specified block address.
+ *
+ * @param  block   The block number to authenticate.  (0..63 for
+ *                 1KB cards, and 0..255 for 4KB cards).
+ * @param  data    Pointer to the byte array that will hold the
+ *                 retrieved data (if any)
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_len);
+
 /** @} */
 
 /**
