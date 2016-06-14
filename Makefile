@@ -2,7 +2,6 @@ PROJECT_NAME := gate
 OUTPUT_FILENAME := nrf51422_xxac
 export OUTPUT_FILENAME
 LINKER_SCRIPT=gate.ld
-LINKER_PATH = external
 MAKEFILE_NAME := $(MAKEFILE_LIST)
 MAKEFILE_DIR := $(dir $(MAKEFILE_NAME) ) 
 GNU_INSTALL_ROOT := /home/rad2/workspace/ble/gcc-arm-none-eabi-5_3-2016q1
@@ -28,6 +27,7 @@ C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath pn532.c) \
         $(abspath uart_log.c) \
+        $(abspath sign.c) \
         $(abspath external/drivers_nrf/delay/nrf_delay.c) \
         $(abspath external/drivers_nrf/twi_master/nrf_drv_twi.c) \
         $(abspath external/drivers_nrf/common/nrf_drv_common.c) \
@@ -50,7 +50,15 @@ INC_PATHS = \
         -I$(abspath external/drivers_nrf/config) \
         -I$(abspath external/drivers_nrf/common) \
         -I$(abspath external/util_nrf) \
-        -I$(abspath external/CMSIS/Include)
+        -I$(abspath external/CMSIS/Include) \
+        -I$(abspath /opt/libsodium/include)
+
+LIBS += \
+        -lsodium
+
+LINKER_PATHS += \
+        -L$(abspath external) \
+        -L$(abspath /opt/libsodium/lib)
 
 DEFINES += \
         NRF51 \
@@ -98,7 +106,7 @@ CFLAGS += $(addprefix "-D", $(DEFINES))
 
 #Linker flags
 LDFLAGS += -Xlinker -Map=$(LISTING_DIRECTORY)/$(OUTPUT_FILENAME).map
-LDFLAGS += -mthumb -mabi=aapcs -L $(LINKER_PATH) -T$(LINKER_SCRIPT)
+LDFLAGS += -mthumb -mabi=aapcs $(LINKER_PATHS) -T$(LINKER_SCRIPT)
 LDFLAGS += -mcpu=cortex-m0
 # let linker to dump unused sections
 LDFLAGS += -Wl,--gc-sections
