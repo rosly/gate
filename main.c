@@ -117,6 +117,7 @@ void tag_scan(void)
         goto err;
     }
 
+    LEDS_ON(BSP_LED_2_MASK);
     log_printf("Tag detected uid_length=%u", uid_length);
     log_hex("uid:", uid, uid_length);
 
@@ -197,18 +198,24 @@ void tag_scan(void)
          }
 #endif
 
+         LEDS_OFF(BSP_LED_2_MASK);
          log_printf("Reading done. Testing sig...");
          if (crypto_sign_ed25519_verify_detached(crypto_sig, auth_data, 16 + 4, crypto_pk)) {
             log_printf("Sig verify error\n\n");
             goto err;
          }
          log_printf("Sig test OK!\n\n");
+         LEDS_ON(BSP_LED_3_MASK);
+         nrf_delay_ms(1000);
     }
 
    return;
 
 err:
-   nrf_delay_ms(500);
+   log_printf("Sig test FAIL!\n\n");
+   LEDS_OFF(BSP_LED_2_MASK);
+   LEDS_ON(BSP_LED_1_MASK);
+   nrf_delay_ms(1000);
    return;
 }
 
@@ -219,9 +226,14 @@ int main(void)
     LEDS_ON(BSP_LED_0_MASK);
     log_printf("Main loop");
     for (;;) {
-        LEDS_OFF(BSP_LED_1_MASK);
+        LEDS_OFF(LEDS_MASK);
+        LEDS_ON(BSP_LED_0_MASK);
+//#define DUMP_CARD
+#ifdef  DUMP_CARD
+        dump_card();
+#else
         tag_scan();
-        LEDS_ON(BSP_LED_1_MASK);
+#endif
     }
 }
 
