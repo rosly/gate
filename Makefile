@@ -27,7 +27,6 @@ C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath pn532.c) \
         $(abspath uart_log.c) \
-        $(abspath sign.c) \
         $(abspath external/drivers_nrf/delay/nrf_delay.c) \
         $(abspath external/drivers_nrf/twi_master/nrf_drv_twi.c) \
         $(abspath external/drivers_nrf/common/nrf_drv_common.c) \

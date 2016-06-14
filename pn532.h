@@ -539,6 +539,15 @@ int pn532_mifareclassic_authenticateblock(
  */
 int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_len);
 
+/** @brief Tries to write an entire 16-byte data block at the specified block address.
+ *
+ * @param  blockNumber   The block number to authenticate.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  data          The byte array that contains the data to write.
+ * @returns 1 if everything executed properly, 0 for an error
+ */
+int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data);
+
 /** @} */
 
 /**

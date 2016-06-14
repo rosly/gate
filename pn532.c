@@ -914,22 +914,6 @@ bool pn532_mifareclassic_tailer_block(uint8_t block)
       return ((block + 1) % 16 == 0);
 }
 
-/** @brief Function authenticate access to memory block 
- *
- * See section 7.3.8 of the PN532 User Manual for more information on sending
- * MIFARE and other commands.
- *
- * @param  uid           Pointer to a byte array containing the card UID
- * @param  uid_len        The length (in bytes) of the card's UID (Should
- *                       be 4 for MIFARE Classic)
- * @param  block   The block number to authenticate.  (0..63 for
- *                       1KB cards, and 0..255 for 4KB cards).
- * @param  key_idx     Which key type to use during authentication
- *                       (0 = MIFARE_CMD_AUTH_A, 1 = MIFARE_CMD_AUTH_B)
- * @param  key_data       Pointer to a byte array containing the 6 byte key value
- *
- * @returns 0 if everything executed properly, !=0 for an error
- */
 int pn532_mifareclassic_authenticateblock(
     uint8_t * uid, uint8_t uid_len, uint8_t block,
     uint8_t key_idx, const uint8_t key_data[6])
@@ -960,19 +944,11 @@ int pn532_mifareclassic_authenticateblock(
     return 0;
 }
 
-/** @brief Reads an entire 16-byte data block at the specified block address.
- *
- * @param  block   The block number to authenticate.  (0..63 for
- *                 1KB cards, and 0..255 for 4KB cards).
- * @param  data    Pointer to the byte array that will hold the
- *                 retrieved data (if any)
- * @returns 0 if everything executed properly, !=0 for an error
- */
 int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_len)
 {
     ret_code_t ret_code;
     uint8_t len;
-    uint8_t readop_buf[26];
+    uint8_t readop_buf[18];
 
     PN532_LOG("Trying to read 16 bytes from block %u\r\n", block);
 
@@ -993,6 +969,39 @@ int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_
     if (len > data_len)
 	    len = data_len;
     memcpy(data, readop_buf, len);
+
+    return NRF_SUCCESS;
+}
+
+/** @brief Tries to write an entire 16-byte data block at the specified block address.
+ *
+ * @param  blockNumber   The block number to authenticate.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  data          The byte array that contains the data to write.
+ * @returns 1 if everything executed properly, 0 for an error
+ */
+int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data)
+{
+    ret_code_t ret_code;
+    uint8_t len;
+    uint8_t writeop_buf[18];
+
+    log_printf("Trying to write 16 bytes to block");
+
+    /* Prepare command */
+    writeop_buf[0] = MIFARE_CMD_WRITE; /* Mifare Write command = 0xA0 */
+    writeop_buf[1] = block;            /* Block Number (0..63 for 1K, 0..255 for 4K) */
+    memcpy(writeop_buf+2, data, 16);   /* Data Payload */
+
+    /* Send the command */
+    len = sizeof(writeop_buf);
+    ret_code = pn532_in_data_exchange(writeop_buf, 2 + 16, writeop_buf, &len);
+
+    if ((ret_code != NRF_SUCCESS) || (len != 16))
+    {
+        PN532_LOG("Write block error, err_code = %d\r\n", err_code);
+        return ret_code;
+    }
 
     return NRF_SUCCESS;
 }
