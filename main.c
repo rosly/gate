@@ -36,6 +36,57 @@ static const uint8_t crypto_sk[crypto_sign_ed25519_SECRETKEYBYTES] =
      0x58, 0x78, 0x63, 0xa4, 0xa7, 0xe2, 0xf4, 0xb8, 0x64, 0x5f, 0x7f, 0x52,
      0x54, 0xbd, 0x33, 0x9f };
 
+void value_format(uint32_t val, uint8_t buff[16], uint8_t block)
+{
+   buff[0]  = (val & 0x000000ff);
+   buff[1]  = (val & 0x0000ff00) >> 8;
+   buff[2]  = (val & 0x00ff0000) >> 16;
+   buff[3]  = (val & 0xff000000) >> 24;
+   uint32_t nval = ~val;
+   buff[4]  = (nval & 0x000000ff);
+   buff[5]  = (nval & 0x0000ff00) >> 8;
+   buff[6]  = (nval & 0x00ff0000) >> 16;
+   buff[7]  = (nval & 0xff000000) >> 24;
+   buff[8]  = (val & 0x000000ff);
+   buff[9]  = (val & 0x0000ff00) >> 8;
+   buff[10] = (val & 0x00ff0000) >> 16;
+   buff[11] = (val & 0xff000000) >> 24;
+   buff[12] = block;
+   buff[13] = (uint8_t)(~block); /* casting since def it is int */
+   buff[14] = block;
+   buff[15] = (uint8_t)(~block);
+}
+
+int value_verify(uint32_t *valret, uint8_t buff[16], uint8_t block)
+{
+   uint32_t val1 = 0;
+   uint32_t val2 = 0;
+   uint32_t val3 = 0;
+
+   val1 = buff[0] |
+         (buff[1] << 8) |
+         (buff[2] << 16) |
+         (buff[3] << 24);
+   val2 = buff[4] |
+         (buff[5] << 8) |
+         (buff[6] << 16) |
+         (buff[7] << 24);
+   val2 = ~val2;
+   val3 = buff[8] |
+         (buff[9] << 8) |
+         (buff[10] << 16) |
+         (buff[11] << 24);
+   if ((val1 == val2) && (val1 == val3) &&
+       (buff[12] == (uint8_t)(~buff[13])) && /* casting since def it is int */
+       (buff[12] == buff[14]) &&
+       (buff[12] == (uint8_t)(~buff[15]))) {
+           *valret = val1;
+           return 0;
+   }
+
+   return -1;
+}
+
 void board_setup(void)
 {
    ret_code_t err_code;
@@ -56,6 +107,7 @@ void dump_card(void)
     uint8_t uid[TAG_TYPE_2_UID_LENGTH] = { 0 };
     uint8_t uid_length                 = TAG_TYPE_2_UID_LENGTH;
     uint8_t block_data[16];
+    char trailer[12];
     size_t i;
 
     /* Detect a ISO14443A Tag in the field and initiate a communication. This
@@ -88,20 +140,24 @@ void dump_card(void)
                 return;
             }
 
-            log_hex("Data:", block_data, 16);
+            snprintf(trailer, sizeof(trailer), "Block[%02u]:", i);
+            log_hex(trailer, block_data, 16);
         }
 
         log_printf("Dump done.");
     }
 }
 
-void tag_scan(void)
+void tag_init(void)
 {
     size_t i;
     ret_code_t err_code;
+    unsigned long long sig_len;
+    int ret;
     uint8_t uid[TAG_TYPE_2_UID_LENGTH] = { 0 };
     uint8_t uid_length                 = TAG_TYPE_2_UID_LENGTH;
     uint8_t auth_data[4 + 16];
+    uint8_t check_data[16];
     uint8_t crypto_sig[64];
     uint8_t block;
 
@@ -141,8 +197,108 @@ void tag_scan(void)
              log_printf("Error while reading user auth block");
              goto err;
          }
-
          log_hex("Auth data:", auth_data, 4 + 16);
+
+         log_printf("Writing check data...");
+         block = 5;
+         value_format(0x00000000, check_data, block);
+         log_hex("Check data:", check_data, 16);
+         if (pn532_mifareclassic_writedatablock(
+               block, check_data)) {
+             log_printf("Error while writing check block");
+             goto err;
+         }
+
+         log_printf("Writing sig...");
+         ret = crypto_sign_ed25519_detached(
+              crypto_sig, &sig_len, auth_data, sizeof(auth_data), crypto_sk);
+         if(ret || (sig_len != 64)) {
+            log_printf("Sign error\n");
+            goto err;
+         }
+
+         for (i = 0; i < 4; i++) {
+            block = (i + 8) + (i==3?1:0); /* omit 11th block */
+            if (pn532_mifareclassic_authenticateblock(
+                  uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+                log_printf("Error while unlocking block");
+                goto err;
+            }
+
+            if (pn532_mifareclassic_writedatablock(
+                  block, &crypto_sig[i * 16])) {
+                log_printf("Error while writing user auth block");
+                goto err;
+            }
+
+            log_hex("Write auth sig:", &crypto_sig[i*16], 16);
+         }
+         log_printf("Writing sig OK!");
+         nrf_delay_ms(1000);
+    }
+
+err:
+    LEDS_OFF(BSP_LED_2_MASK);
+}
+
+void tag_scan(void)
+{
+    size_t i;
+    ret_code_t err_code;
+    uint32_t check_val;
+    uint8_t uid[TAG_TYPE_2_UID_LENGTH] = { 0 };
+    uint8_t uid_length                 = TAG_TYPE_2_UID_LENGTH;
+    uint8_t auth_data[4 + 16];
+    uint8_t check_data[16];
+    uint8_t crypto_sig[64];
+    uint8_t block;
+
+    /* Detect a ISO14443A Tag in the field and initiate a communication. This
+     * function activates the NFC RF field. If a Tag is present, its UID is
+     * stored in the uid buffer. The UID read from the Tag can not be longer
+     * than uidLength value passed to the function.  As a result, the uidLength
+     * variable returns length of the Tags UID read. */
+    err_code = pn532_read_passive_target_id(
+       PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
+    if (err_code != NRF_SUCCESS) {
+        log_printf("Error while scaning tag %u", err_code);
+        goto err;
+    }
+
+    LEDS_ON(BSP_LED_2_MASK);
+    log_printf("Tag detected uid_length=%u", uid_length);
+    log_hex("uid:", uid, uid_length);
+
+    if (uid_length == 4) {
+        log_printf("Tag is probably Mifare Clasic. Reading...");
+
+         /* Copy the uid into auth stream */
+         memcpy(auth_data, uid, 4);
+
+         /* Read the access rights into auth stream */
+         log_printf("Reading access rights ...");
+         block = 4;
+         if (pn532_mifareclassic_authenticateblock(
+               uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+             log_printf("Error while unlocking block");
+             goto err;
+         }
+
+         if (pn532_mifareclassic_readdatablock(
+               block, &auth_data[4], sizeof(auth_data) - 4)) {
+             log_printf("Error while reading user auth block");
+             goto err;
+         }
+         log_hex("Auth data:", auth_data, 4 + 16);
+
+         block = 5;
+         if (pn532_mifareclassic_readdatablock(
+               block, check_data, sizeof(check_data))) {
+             log_printf("Error while reading check_data block");
+             goto err;
+         }
+         log_hex("Checkpoint data:", check_data, sizeof(check_data));
+
          log_printf("Reading signature ...");
          for (i = 0; i < 4; i++) {
             block = (i + 8) + (i==3?1:0); /* omit 11th block */
@@ -161,45 +317,16 @@ void tag_scan(void)
             log_hex("Auth sig:", &crypto_sig[i*16], 16);
          }
 
-//#define INIT_EMPTY_TAG
-#ifdef  INIT_EMPTY_TAG
-         for (i = 0; i < sizeof(crypto_sig); i++) {
-             if (crypto_sig[i])
-                 break;
-         }
-         if (i == sizeof(crypto_sig)) {
-             unsigned long long sig_len;
-             int ret;
-
-             log_printf("Card empty. Writing sig");
-             ret = crypto_sign_ed25519_detached(
-                  crypto_sig, &sig_len, auth_data, sizeof(auth_data), crypto_sk);
-             if(ret || (sig_len != 64)) {
-                log_printf("Sign error\n");
-                goto err;
-             }
-
-             for (i = 0; i < 4; i++) {
-                block = (i + 8) + (i==3?1:0); /* omit 11th block */
-                if (pn532_mifareclassic_authenticateblock(
-                      uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
-                    log_printf("Error while unlocking block");
-                    goto err;
-                }
-
-                if (pn532_mifareclassic_writedatablock(
-                      block, &crypto_sig[i * 16])) {
-                    log_printf("Error while writing user auth block");
-                    goto err;
-                }
-
-                log_hex("Write auth sig:", &crypto_sig[i*16], 16);
-             }
-         }
-#endif
-
          LEDS_OFF(BSP_LED_2_MASK);
-         log_printf("Reading done. Testing sig...");
+
+         log_printf("Reading done. Testing check_data...");
+         if (value_verify(&check_val, check_data, 5)) {
+             log_printf("Check validation error");
+             goto err;
+         }
+
+         log_printf("Test data OK!");
+         log_printf("Testing sig...");
          if (crypto_sign_ed25519_verify_detached(crypto_sig, auth_data, 16 + 4, crypto_pk)) {
             log_printf("Sig verify error\n\n");
             goto err;
@@ -232,6 +359,11 @@ int main(void)
 #ifdef  DUMP_CARD
         dump_card();
 #else
+        dump_card();
+#define INIT_EMPTY_TAG
+#ifdef  INIT_EMPTY_TAG
+        tag_init();
+#endif
         tag_scan();
 #endif
     }
