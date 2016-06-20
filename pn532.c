@@ -973,13 +973,6 @@ int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_
     return NRF_SUCCESS;
 }
 
-/** @brief Tries to write an entire 16-byte data block at the specified block address.
- *
- * @param  blockNumber   The block number to authenticate.  (0..63 for
- *                       1KB cards, and 0..255 for 4KB cards).
- * @param  data          The byte array that contains the data to write.
- * @returns 1 if everything executed properly, 0 for an error
- */
 int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data)
 {
     ret_code_t ret_code;
@@ -1004,6 +997,107 @@ int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data)
     }
 
     return NRF_SUCCESS;
+}
+
+int pn532_mifareclassic_increment(uint8_t block, uint32_t value)
+{
+    ret_code_t ret_code;
+    uint8_t len;
+    uint8_t op_buf[6];
+
+    /* Prepare command */
+    op_buf[0] = MIFARE_CMD_INCREMENT; /* Mifare Increment command = 0xC1 */
+    op_buf[1] = block;	           /* Block Number (0..63 for 1K, 0..255 for 4K) */
+    op_buf[2] = value & 0x000000ff;
+    op_buf[3] = (value & 0x0000ff00) >> 8;
+    op_buf[4] = (value & 0x00ff0000) >> 16;
+    op_buf[5] = (value & 0xff000000) >> 24;
+
+    /* Send the command */
+    len = sizeof(op_buf);
+    ret_code = pn532_in_data_exchange(op_buf, 6, op_buf, &len);
+
+    if ((ret_code != NRF_SUCCESS) || (len != 0))
+    {
+        PN532_LOG("Write block error, err_code = %d\r\n", err_code);
+        return ret_code;
+    }
+
+    return NRF_SUCCESS;
+}
+
+int pn532_mifareclassic_transfer(uint8_t block)
+{
+    ret_code_t ret_code;
+    uint8_t len;
+    uint8_t op_buf[2];
+
+    /* Prepare command */
+    op_buf[0] = MIFARE_CMD_TRANSFER; /* Mifare Transfer command = 0xB0 */
+    op_buf[1] = block;	             /* Block Number (0..63 for 1K, 0..255 for 4K) */
+
+    /* Send the command */
+    len = sizeof(op_buf);
+    ret_code = pn532_in_data_exchange(op_buf, 2, op_buf, &len);
+
+    if ((ret_code != NRF_SUCCESS) || (len != 0))
+    {
+        PN532_LOG("Write block error, err_code = %d\r\n", err_code);
+        return ret_code;
+    }
+
+    return NRF_SUCCESS;
+}
+
+void pn532_mifareclasic_value_format(uint32_t val, uint8_t buff[16], uint8_t block)
+{
+   buff[0]  = (val & 0x000000ff);
+   buff[1]  = (val & 0x0000ff00) >> 8;
+   buff[2]  = (val & 0x00ff0000) >> 16;
+   buff[3]  = (val & 0xff000000) >> 24;
+   uint32_t nval = ~val;
+   buff[4]  = (nval & 0x000000ff);
+   buff[5]  = (nval & 0x0000ff00) >> 8;
+   buff[6]  = (nval & 0x00ff0000) >> 16;
+   buff[7]  = (nval & 0xff000000) >> 24;
+   buff[8]  = (val & 0x000000ff);
+   buff[9]  = (val & 0x0000ff00) >> 8;
+   buff[10] = (val & 0x00ff0000) >> 16;
+   buff[11] = (val & 0xff000000) >> 24;
+   buff[12] = block;
+   buff[13] = (uint8_t)(~block); /* casting since def it is int */
+   buff[14] = block;
+   buff[15] = (uint8_t)(~block);
+}
+
+int pn532_mifareclasic_value_verify(uint32_t *valret, uint8_t buff[16], uint8_t block)
+{
+   uint32_t val1 = 0;
+   uint32_t val2 = 0;
+   uint32_t val3 = 0;
+
+   val1 = buff[0] |
+         (buff[1] << 8) |
+         (buff[2] << 16) |
+         (buff[3] << 24);
+   val2 = buff[4] |
+         (buff[5] << 8) |
+         (buff[6] << 16) |
+         (buff[7] << 24);
+   val2 = ~val2;
+   val3 = buff[8] |
+         (buff[9] << 8) |
+         (buff[10] << 16) |
+         (buff[11] << 24);
+   if ((val1 == val2) && (val1 == val3) &&
+       (buff[12] == (uint8_t)(~buff[13])) && /* casting since def it is int */
+       (buff[12] == buff[14]) &&
+       (buff[12] == (uint8_t)(~buff[15]))) {
+           *valret = val1;
+           return 0;
+   }
+
+   return -1;
 }
 
 /***** NTAG2xx Functions ******/

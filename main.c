@@ -3,7 +3,7 @@
 #include <inttypes.h>
 #include <string.h>
 
-#include <boards.h> /* include nrf_gpio.h and pca10028.h based on BOARD_* 
+#include <boards.h> /* include nrf_gpio.h and pca10028.h based on BOARD_*
                        define from makefile */
 #include <sdk_errors.h> /* for ret_code_t and error defines */
 #include <nrf_delay.h>
@@ -35,57 +35,6 @@ static const uint8_t crypto_sk[crypto_sign_ed25519_SECRETKEYBYTES] =
      0x6f, 0xa3, 0x11, 0x78, 0x13, 0x11, 0xfa, 0xae, 0x1f, 0xaa, 0xdb, 0x14,
      0x58, 0x78, 0x63, 0xa4, 0xa7, 0xe2, 0xf4, 0xb8, 0x64, 0x5f, 0x7f, 0x52,
      0x54, 0xbd, 0x33, 0x9f };
-
-void value_format(uint32_t val, uint8_t buff[16], uint8_t block)
-{
-   buff[0]  = (val & 0x000000ff);
-   buff[1]  = (val & 0x0000ff00) >> 8;
-   buff[2]  = (val & 0x00ff0000) >> 16;
-   buff[3]  = (val & 0xff000000) >> 24;
-   uint32_t nval = ~val;
-   buff[4]  = (nval & 0x000000ff);
-   buff[5]  = (nval & 0x0000ff00) >> 8;
-   buff[6]  = (nval & 0x00ff0000) >> 16;
-   buff[7]  = (nval & 0xff000000) >> 24;
-   buff[8]  = (val & 0x000000ff);
-   buff[9]  = (val & 0x0000ff00) >> 8;
-   buff[10] = (val & 0x00ff0000) >> 16;
-   buff[11] = (val & 0xff000000) >> 24;
-   buff[12] = block;
-   buff[13] = (uint8_t)(~block); /* casting since def it is int */
-   buff[14] = block;
-   buff[15] = (uint8_t)(~block);
-}
-
-int value_verify(uint32_t *valret, uint8_t buff[16], uint8_t block)
-{
-   uint32_t val1 = 0;
-   uint32_t val2 = 0;
-   uint32_t val3 = 0;
-
-   val1 = buff[0] |
-         (buff[1] << 8) |
-         (buff[2] << 16) |
-         (buff[3] << 24);
-   val2 = buff[4] |
-         (buff[5] << 8) |
-         (buff[6] << 16) |
-         (buff[7] << 24);
-   val2 = ~val2;
-   val3 = buff[8] |
-         (buff[9] << 8) |
-         (buff[10] << 16) |
-         (buff[11] << 24);
-   if ((val1 == val2) && (val1 == val3) &&
-       (buff[12] == (uint8_t)(~buff[13])) && /* casting since def it is int */
-       (buff[12] == buff[14]) &&
-       (buff[12] == (uint8_t)(~buff[15]))) {
-           *valret = val1;
-           return 0;
-   }
-
-   return -1;
-}
 
 void board_setup(void)
 {
@@ -134,7 +83,7 @@ void dump_card(void)
                 log_printf("Error while block auth");
                 return;
             }
-            
+
             if (pn532_mifareclassic_readdatablock(i, block_data, sizeof(block_data))) {
                 log_printf("Error while block read");
                 return;
@@ -191,7 +140,7 @@ void tag_init(void)
              log_printf("Error while unlocking block");
              goto err;
          }
- 
+
          if (pn532_mifareclassic_readdatablock(
                block, &auth_data[4], sizeof(auth_data) - 4)) {
              log_printf("Error while reading user auth block");
@@ -201,7 +150,7 @@ void tag_init(void)
 
          log_printf("Writing check data...");
          block = 5;
-         value_format(0x00000000, check_data, block);
+         pn532_mifareclasic_value_format(0x00000000, check_data, block);
          log_hex("Check data:", check_data, 16);
          if (pn532_mifareclassic_writedatablock(
                block, check_data)) {
@@ -299,6 +248,23 @@ void tag_scan(void)
          }
          log_hex("Checkpoint data:", check_data, sizeof(check_data));
 
+         log_printf("Validating check_data...");
+         if (pn532_mifareclasic_value_verify(&check_val, check_data, block)) {
+             log_printf("Check validation error");
+             goto err;
+         }
+         log_printf("Check value %u", check_val);
+
+         log_printf("Incrementing check point...");
+         if (pn532_mifareclassic_increment(block, 0x01)) {
+             log_printf("Error while incrementing checkpoint");
+             goto err;
+         }
+         if (pn532_mifareclassic_transfer(block)) {
+             log_printf("Error while transfer checkpoint block");
+             goto err;
+         }
+
          log_printf("Reading signature ...");
          for (i = 0; i < 4; i++) {
             block = (i + 8) + (i==3?1:0); /* omit 11th block */
@@ -319,13 +285,6 @@ void tag_scan(void)
 
          LEDS_OFF(BSP_LED_2_MASK);
 
-         log_printf("Reading done. Testing check_data...");
-         if (value_verify(&check_val, check_data, 5)) {
-             log_printf("Check validation error");
-             goto err;
-         }
-
-         log_printf("Test data OK!");
          log_printf("Testing sig...");
          if (crypto_sign_ed25519_verify_detached(crypto_sig, auth_data, 16 + 4, crypto_pk)) {
             log_printf("Sig verify error\n\n");
@@ -358,12 +317,12 @@ int main(void)
 //#define DUMP_CARD
 #ifdef  DUMP_CARD
         dump_card();
-#else
-        dump_card();
-#define INIT_EMPTY_TAG
+#endif
+
+//#define INIT_EMPTY_TAG
 #ifdef  INIT_EMPTY_TAG
         tag_init();
-#endif
+#else
         tag_scan();
 #endif
     }

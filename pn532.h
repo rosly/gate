@@ -59,8 +59,8 @@
  *
  *  This library is an nRF51 and nRF52 port of the Adafruit PN532 library,
  *  which is available on <a href="https://github.com/adafruit/Adafruit-PN532" target="_blank">GitHub</a>,
- *  with some improvements and bugfixes. The library is responsible for 
- *  communicating with the Adafruit PN532 NFC Shield and using its main 
+ *  with some improvements and bugfixes. The library is responsible for
+ *  communicating with the Adafruit PN532 NFC Shield and using its main
  *  functions.
  *
  *  This library can be used with an <a href="https://www.adafruit.com/products/789" target="_blank">Adafruit PN532 NFC/RFID Controller Shield</a>.
@@ -178,7 +178,7 @@
 #define MIFARE_CMD_TRANSFER                 (0xB0)
 #define MIFARE_CMD_DECREMENT                (0xC0)
 #define MIFARE_CMD_INCREMENT                (0xC1)
-#define MIFARE_CMD_STORE                    (0xC2)
+#define MIFARE_CMD_RESTORE                  (0xC2)
 #define MIFARE_ULTRALIGHT_CMD_WRITE         (0xA2)
 /** @} */
 
@@ -314,24 +314,24 @@ ret_code_t pn532_field_off(void);
 /**  @brief Function for detecting an ISO14443A target presence in the RF field.
  *
  *   This function enables the RF field and scans for ISO14443A targets present
- *   in the field. The number of scan retries is set by the @ref pn532_set_passive_activation_retries 
+ *   in the field. The number of scan retries is set by the @ref pn532_set_passive_activation_retries
  *   function. By default, the maximum number of retries is set to unlimited, which means
- *   that the PN532 Shield scans for targets until it finds one or the scan is 
+ *   that the PN532 Shield scans for targets until it finds one or the scan is
  *   canceled. The @p timeout parameter specifies the time-out of the scan. If it is
  *   set to a value greater than 0, the function exits with a failure if either the maximum number
  *   of retries or the time-out has been reached. If the @p timeout parameter is set to 0,
- *   a single scan is performed. When the ISO14443A target is detected, the 
+ *   a single scan is performed. When the ISO14443A target is detected, the
  *   PN532 module initializes communication and reads the target's UID.
  *
  *   @param[in]     card_baudrate         Baud rate of the card.
  *   @param[out]    p_uid                 Pointer to the array that will be populated
  *                                        with the card's UID (up to 7 bytes).
- *   @param[in,out] p_uid_len             Pointer to the variable that stores 
+ *   @param[in,out] p_uid_len             Pointer to the variable that stores
  *                                        the length of the p_uid buffer (as input)
- *                                        and the length of the target's UID that 
+ *                                        and the length of the target's UID that
  *                                        was read (as output).
  *   @param[in]     timeout               Time-out (in ms). 0 means that only a single
- *                                        scan is performed. 
+ *                                        scan is performed.
  *                                        If no tag is presented before the time-out,
  *                                        the function returns NRF_ERROR_INTERNAL.
  *
@@ -349,7 +349,7 @@ ret_code_t pn532_read_passive_target_id(uint8_t   card_baudrate,
  *   @param[in]     send_len               Length of the data to send.
  *   @param[out]    p_response             Pointer to the buffer for response data.
  *   @param[in,out] p_response_len         Pointer to the variable that stores
- *                                         the length of the p_response buffer (as 
+ *                                         the length of the p_response buffer (as
  *                                         input) and the length of the response data
  *                                         (as output).
  *
@@ -509,7 +509,7 @@ bool pn532_mifareclassic_first_block(uint8_t block);
  */
 bool pn532_mifareclassic_tailer_block(uint8_t block);
 
-/** @brief Function authenticate access to memory block 
+/** @brief Function authenticate access to memory block
  *
  * See section 7.3.8 of the PN532 User Manual for more information on sending
  * MIFARE and other commands.
@@ -547,6 +547,49 @@ int pn532_mifareclassic_readdatablock(uint8_t block, uint8_t *data, size_t data_
  * @returns 1 if everything executed properly, 0 for an error
  */
 int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data);
+
+/** @brief Function increment the value block
+ *
+ * Note: Block must be formated as value block. Use
+ *       pn532_mifareclassic_value_format() function for that purpose.
+ * Note: After increment, new value is not imidiately writen back to block.
+ *       Instead it is stored in transfer buffer and requres transfer operation
+ *       to write it back to the block.
+ *
+ * @param  block         The block number to increment.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  value         Value by which the block winn be incremented
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_increment(uint8_t block, uint32_t value);
+
+/** @brief Function stores the transfer buffer inside specified block
+ *
+ * @param  block         The block number to increment.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @param  value         Value by which the block winn be incremented
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclassic_transfer(uint8_t block);
+
+/** @brief Function formats the block data as required for value block
+ *
+ * @param  val		 Initial value of block
+ * @param  buff          Pointer to block data buffer
+ * @param  block         The block number to increment.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ */
+void pn532_mifareclasic_value_format(uint32_t val, uint8_t buff[16], uint8_t block);
+
+/** @brief Function validates if block is the value block
+ *
+ * @param  valret        Pointer where the parsed value will be stored
+ * @param  buff          Pointer to block data buffer
+ * @param  block         The block number to increment.  (0..63 for
+ *                       1KB cards, and 0..255 for 4KB cards).
+ * @returns 0 if everything executed properly, !=0 for an error
+ */
+int pn532_mifareclasic_value_verify(uint32_t *valret, uint8_t buff[16], uint8_t block);
 
 /** @} */
 
