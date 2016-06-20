@@ -24,6 +24,7 @@
 #define TAG_DETECT_TIMEOUT    5000 // Timeout for function which searches for a tag.
 
 static const uint8_t def_mifare_key[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+static const uint8_t gate_mifare_key[] = { 0x56, 0x53, 0x21, 0xd2, 0x6f, 0xa3 };
 static const uint8_t crypto_pk[crypto_sign_ed25519_PUBLICKEYBYTES] =
    { 0x56, 0x53, 0x21, 0xd2, 0x6f, 0xa3, 0x11, 0x78, 0x13, 0x11, 0xfa, 0xae,
      0x1f, 0xaa, 0xdb, 0x14, 0x58, 0x78, 0x63, 0xa4, 0xa7, 0xe2, 0xf4, 0xb8,
@@ -56,6 +57,7 @@ void dump_card(void)
     uint8_t uid[TAG_TYPE_2_UID_LENGTH] = { 0 };
     uint8_t uid_length                 = TAG_TYPE_2_UID_LENGTH;
     uint8_t block_data[16];
+    const uint8_t *auth_key;
     char trailer[12];
     size_t i;
 
@@ -77,9 +79,31 @@ void dump_card(void)
     if (uid_length == 4) {
         log_printf("Tag is probably Mifare Clasic. Reading...");
 
+        auth_key = def_mifare_key;
+        if (pn532_mifareclassic_authenticateblock(
+              uid, uid_length, 4, MIFARE_AUTH_KEY_A, auth_key)) {
+            log_printf("Failed while using default key. Trying the \"gate\" key...");
+
+            /* some bug causes that after invalid auth, all following auth also
+             * does failure. Therefore we rescan which reset the state machine */
+            err_code = pn532_read_passive_target_id(
+               PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
+            if (err_code != NRF_SUCCESS) {
+                log_printf("Error while scaning tag %u", err_code);
+                return;
+            }
+
+            auth_key = gate_mifare_key;
+            if (pn532_mifareclassic_authenticateblock(
+                  uid, uid_length, 4, MIFARE_AUTH_KEY_A, auth_key)) {
+                log_printf("Failed while using \"gate\" key, bailing out.");
+                return;
+            }
+        }
+
         for (i = 0; i < 16; i++) {
             if (pn532_mifareclassic_authenticateblock(
-                  uid, uid_length, i, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+                  uid, uid_length, i, MIFARE_AUTH_KEY_A, auth_key)) {
                 log_printf("Error while block auth");
                 return;
             }
@@ -182,7 +206,40 @@ void tag_init(void)
 
             log_hex("Write auth sig:", &crypto_sig[i*16], 16);
          }
-         log_printf("Writing sig OK!");
+
+         log_printf("Securing block access rights and keys");
+         memcpy(auth_data, gate_mifare_key, 6);
+         /* following are the access rights, the are bit encoded with redundant
+          * invesed bits so it is hard to assign any meaning to paticular values
+          * use the Mifare access bit calculator for those */
+         auth_data[6] = 0xFF;
+         auth_data[7] = 0x07;
+         auth_data[8] = 0x80;
+         auth_data[9] = 0x00;
+         /* using default key for keyB since card will allow to read it, while in the
+          * same time it will refuse to use it for block operations */
+         memset(&auth_data[10], 0xff, 6);
+
+         for (i = 0; i < 4; i++) {
+            block = i*4 + 3;
+            if (pn532_mifareclassic_authenticateblock(
+                  uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+                log_printf("Error while unlocking block");
+                goto err;
+            }
+
+            log_hex("Secure block:", auth_data, 16);
+
+            if (pn532_mifareclassic_writedatablock(
+                  block, auth_data)) {
+                log_printf("Error while writing auth block");
+                goto err;
+            }
+
+         log_printf("Sector %u secured", i);
+         }
+
+         log_printf("Writing OK!");
          nrf_delay_ms(1000);
     }
 
@@ -228,7 +285,7 @@ void tag_scan(void)
          log_printf("Reading access rights ...");
          block = 4;
          if (pn532_mifareclassic_authenticateblock(
-               uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+               uid, uid_length, block, MIFARE_AUTH_KEY_A, gate_mifare_key)) {
              log_printf("Error while unlocking block");
              goto err;
          }
@@ -269,7 +326,7 @@ void tag_scan(void)
          for (i = 0; i < 4; i++) {
             block = (i + 8) + (i==3?1:0); /* omit 11th block */
             if (pn532_mifareclassic_authenticateblock(
-                  uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
+                  uid, uid_length, block, MIFARE_AUTH_KEY_A, gate_mifare_key)) {
                 log_printf("Error while unlocking block");
                 goto err;
             }

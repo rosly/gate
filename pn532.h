@@ -499,6 +499,8 @@ ret_code_t pn532_read_data(uint8_t * p_buff, uint8_t n);
  */
 ret_code_t pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len);
 
+ret_code_t pn532_write_ack(bool ack);
+
 
 /** @brief Function indicates whether the specified block number is the first
  *         block in the sector (block 0 relative to the current sector)

@@ -176,6 +176,8 @@ static uint8_t pn532_cs_complement_calc(uint8_t current_sum)
  */
 static ret_code_t pn532_header_check(uint8_t const * p_buffer, uint8_t * p_length)
 {
+    uint8_t dlen;
+
     // Preamble
     if ( (p_buffer[PN532_PREAMBLE_OFFSET] != PN532_PREAMBLE) ||
          (p_buffer[PN532_STARTCODE1_OFFSET] != PN532_STARTCODE1) ||
@@ -185,11 +187,12 @@ static ret_code_t pn532_header_check(uint8_t const * p_buffer, uint8_t * p_lengt
         return NRF_ERROR_INVALID_DATA;
     }
     // Data length
-    if (p_buffer[PN532_LENGTH_CS_OFFSET] !=
-            pn532_cs_complement_calc(p_buffer[PN532_LENGTH_OFFSET]))
+    dlen = p_buffer[PN532_LENGTH_OFFSET];
+    if ((dlen >= 2) &&
+        (p_buffer[PN532_LENGTH_CS_OFFSET] != pn532_cs_complement_calc(dlen)))
     {
         PN532_LOG("Length check invalid: len: 0x%02x, cs: 02%02x\r\n",
-            p_buffer[PN532_LENGTH_OFFSET], p_buffer[PN532_LENGTH_CS_OFFSET]);
+            dlen, p_buffer[PN532_LENGTH_CS_OFFSET]);
         return NRF_ERROR_INVALID_DATA;
     }
     // Direction byte
@@ -200,7 +203,7 @@ static ret_code_t pn532_header_check(uint8_t const * p_buffer, uint8_t * p_lengt
         return NRF_ERROR_INVALID_DATA;
     }
 
-    *p_length = p_buffer[PN532_LENGTH_OFFSET];
+    *p_length = dlen;
 
     return NRF_SUCCESS;
 }
@@ -612,10 +615,12 @@ ret_code_t pn532_read_passive_target_id(uint8_t card_baudrate,
 
 
 ret_code_t pn532_in_data_exchange(uint8_t * p_send,
-                                           uint8_t   send_len,
-                                           uint8_t * p_response,
-                                           uint8_t * p_response_len)
+                                  uint8_t   send_len,
+                                  uint8_t * p_response,
+                                  uint8_t * p_response_len)
 {
+    uint8_t length = 0;
+
     PN532_LOG("Trying in data exchange\r\n");
 
     if (send_len + 2 > PN532_PACKBUFFSIZ)
@@ -637,9 +642,7 @@ ret_code_t pn532_in_data_exchange(uint8_t * p_send,
     pn532_packet_buf[1] = pn532_object._inListedTag;
     memcpy(pn532_packet_buf + 2, p_send, send_len);
 
-    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf,
-                                                  send_len + 2,
-                                                  1000);
+    ret_code_t err_code = pn532_send_cmd(pn532_packet_buf, send_len + 2, 1000);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Could not send ADPU, err_code = %d\r\n", err_code);
@@ -653,20 +656,32 @@ ret_code_t pn532_in_data_exchange(uint8_t * p_send,
     }
 
     err_code = pn532_read_data(pn532_packet_buf,
-                                        *p_response_len + REPLY_INDATAEXCHANGE_BASE_LENGTH);
-                                                        // + 2 for command and status byte
+                               *p_response_len + REPLY_INDATAEXCHANGE_BASE_LENGTH);
+                               // + 2 for command and status byte
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Could not read data, err_code = %d\r\n", err_code);
         return err_code;
     }
 
-    uint8_t length = 0;
+#if 0
+    err_code = pn532_write_ack(true);
+    if (err_code != NRF_SUCCESS) {
+         PN532_LOG("Error when sending N/ACK\r\n");
+         return NRF_ERROR_INTERNAL;
+    }
+#endif
+
     err_code = pn532_header_check(pn532_packet_buf, &length);
     if (err_code != NRF_SUCCESS)
     {
         PN532_LOG("Invalid frame header\r\n");
         return err_code;
+    }
+
+    if (length < 3) {
+        PN532_LOG("Packet to short len=%u\\n", length);
+        return NRF_ERROR_INTERNAL;
     }
 
     if ( (pn532_packet_buf[PN532_TFI_OFFSET] != PN532_PN532TOHOST) ||
@@ -842,6 +857,38 @@ ret_code_t pn532_write_command(uint8_t * p_cmd, uint8_t cmd_len)
     return NRF_SUCCESS;
 }
 
+ret_code_t pn532_write_ack(bool ack)
+{
+    ret_code_t err_code;
+
+    if (pn532_object._usingSPI)
+    {
+        PN532_LOG("Communication over SPI is currently not supported!\r\n");
+        return NRF_ERROR_INTERNAL;
+    }
+
+    // Compose header part of the command frame.
+    pn532_rxtx_buffer[0] = PN532_PREAMBLE;
+    pn532_rxtx_buffer[1] = PN532_STARTCODE1;
+    pn532_rxtx_buffer[2] = PN532_STARTCODE2;
+    pn532_rxtx_buffer[3] = ack ? 0x00 : 0xff;
+    pn532_rxtx_buffer[4] = ack ? 0xff : 0x00;
+    pn532_rxtx_buffer[5] = PN532_POSTAMBLE;
+
+    PN532_LOG("Sending N/ACK\r\n");
+    PN532_LOG_HEX(pn532_rxtx_buffer, 6);
+
+    err_code = nrf_drv_twi_tx(&m_twi_master, PN532_I2C_ADDRESS, pn532_rxtx_buffer,
+                              6, false);
+    if (err_code != NRF_SUCCESS)
+    {
+        PN532_LOG("Failed while calling TWI tx 1, err_code = %d\r\n", err_code);
+        return err_code;
+    }
+
+    return NRF_SUCCESS;
+}
+
 /** Function for enabling or disabling the PN532 RF field.
  *
  *  This function sends a configuration command to the PN532, which enables or disables the RF field.
@@ -922,7 +969,8 @@ int pn532_mifareclassic_authenticateblock(
     uint8_t len;
     uint8_t auth_buf[16];
 
-    PN532_LOG("Trying to authenticate card\r\n");
+    //log_printf("Trying to auth block %u, key=%u", block, key_idx);
+    //log_hex("Auth block:", key_data, 6);
 
     // Prepare the authentication command //
     auth_buf[0] = (key_idx) ? MIFARE_CMD_AUTH_B : MIFARE_CMD_AUTH_A;
