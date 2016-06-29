@@ -27,6 +27,7 @@ C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath pn532.c) \
         $(abspath uart_log.c) \
+        $(abspath fatfs_mmc.c) \
         $(abspath external/drivers_nrf/delay/nrf_delay.c) \
         $(abspath external/drivers_nrf/twi_master/nrf_drv_twi.c) \
         $(abspath external/drivers_nrf/common/nrf_drv_common.c) \
@@ -48,6 +49,7 @@ INC_PATHS = \
         -I$(abspath external/drivers_nrf/twi_master) \
         -I$(abspath external/drivers_nrf/config) \
         -I$(abspath external/drivers_nrf/common) \
+        -I$(abspath external/drivers_nrf/hal) \
         -I$(abspath external/util_nrf) \
         -I$(abspath external/CMSIS/Include) \
         -I$(abspath /opt/libsodium/include)

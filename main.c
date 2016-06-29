@@ -11,6 +11,7 @@
 #include "uart_log.h"
 #include "sodium.h"
 #include "pn532.h" /* for pn532 driver */
+#include "fatfs_diskio.h"
 
 #define ERR_CHECK(_err_code) \
   do { \
@@ -49,6 +50,8 @@ void board_setup(void)
    log_printf("Initializing pn532");
    err_code = pn532_init(false);
    ERR_CHECK(err_code);
+
+   disk_initialize(0);
 }
 
 void dump_card(void)
@@ -209,9 +212,10 @@ void tag_init(void)
 
          log_printf("Securing block access rights and keys");
          memcpy(auth_data, gate_mifare_key, 6);
-         /* following are the access rights, the are bit encoded with redundant
-          * invesed bits so it is hard to assign any meaning to paticular values
-          * use the Mifare access bit calculator for those */
+         /* following are the access rights, those are bit encoded with some redundant
+	  * information encoded as inversed bit values. To decode the access
+	  * rights use Mifare Bit calculator, like following
+	  * http://www.akafugu.jp/posts/blog/2015_09_01-MIFARE-Classic-1K-Access-Bits-Calculator/ */
          auth_data[6] = 0xFF;
          auth_data[7] = 0x07;
          auth_data[8] = 0x80;
