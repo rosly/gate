@@ -52,6 +52,15 @@ void board_setup(void)
    ERR_CHECK(err_code);
 
    disk_initialize(0);
+
+	size_t i;
+	for (i = 0; i < 100; i++) {
+		uint8_t buff[512];
+		if (RES_OK != disk_read(0, buff, i, 1))
+			break;
+		log_printf("Sector %u", i);
+		log_hex("", buff, 512);
+	}
 }
 
 void dump_card(void)

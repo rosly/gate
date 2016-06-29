@@ -57,14 +57,16 @@ void log_printf(const char * format_msg, ...)
 
 void log_hex(const char* msg, const uint8_t * p_data, const uint32_t len)
 {
-    size_t i;
+    size_t i = 0;
     char buffer[4];
     
     log_write_string(msg);
-    for (i = 0; i < len; i++)
+    while (i < len)
     {
         snprintf(buffer, sizeof(buffer), " %02X", p_data[i]);
         log_write_string(buffer);
+		  if (!(++i % 16))
+				log_write_string("\r\n");
     }
 
     log_write_string("\r\n");
