@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+#include "fatfs_integer.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,27 +17,6 @@ extern "C" {
 #define _USE_WRITE	1	/* 1: Enable disk_write() function */
 #define _USE_IOCTL	1	/* 1: Enable disk_ioctl() fucntion */
 
-/* These types MUST be 16-bit or 32-bit */
-typedef int             INT;
-typedef unsigned int    UINT;
-
-/* This type MUST be 8-bit */
-typedef unsigned char   BYTE;
-
-/* These types MUST be 16-bit */
-typedef short           SHORT;
-typedef unsigned short  WORD;
-typedef unsigned short  WCHAR;
-
-/* These types MUST be 32-bit */
-typedef long            LONG;
-typedef unsigned long   DWORD;
-
-/* This type MUST be 64-bit (Remove this for C89 compatibility) */
-typedef unsigned long long QWORD;
-
-/* Status of Disk Functions */
-typedef BYTE	DSTATUS;
 
 /* Results of Disk Functions */
 typedef enum {
@@ -45,7 +26,6 @@ typedef enum {
 	RES_NOTRDY,		/* 3: Not Ready */
 	RES_PARERR		/* 4: Invalid Parameter */
 } DRESULT;
-
 
 /*---------------------------------------*/
 /* Prototypes for disk control functions */

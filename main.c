@@ -12,6 +12,7 @@
 #include "sodium.h"
 #include "pn532.h" /* for pn532 driver */
 #include "fatfs_diskio.h"
+#include "fatfs_ff.h"
 
 #define ERR_CHECK(_err_code) \
   do { \
@@ -62,6 +63,14 @@ void board_setup(void)
 		//log_hex("", buff, 512);
 	}
 	log_printf("MMC read done. Read %u sectors", i);
+
+	FATFS fs;
+	FIL fp;
+	if (f_mount(&fs, "0:", 1))
+		log_printf("f_mount error");
+	if (FR_OK != f_open(&fp, "0:\\plik.txt", FA_READ | FA_CREATE_NEW))
+		log_printf("Open file error");
+
 }
 
 void dump_card(void)

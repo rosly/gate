@@ -20,6 +20,7 @@
 #include "uart_log.h"
 
 #include "fatfs_diskio.h"
+#include "crc_itu.h"
 
 #if 0
 #define SPI_CH	1	/* SPI channel to use = 1: SPI1, 11: SPI1/remap, 2: SPI2 */
@@ -138,77 +139,6 @@ volatile struct mmc_drv mmc_drv = {
 };
 
 /*-----------------------------------------------------------------------*/
-/* CRC calculation helper functions                                      */
-/*-----------------------------------------------------------------------*/
-
-/** CRC table for the CRC ITU-T V.41 0x0x1021 (x^16 + x^12 + x^15 + 1) */
-static const uint16_t crc_itu_t_table[256] = {
-	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-	0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-	0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-	0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-	0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-	0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-	0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-	0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-	0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-	0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-	0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-	0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-	0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-	0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-	0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-	0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-	0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-	0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-	0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-	0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-	0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-	0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-	0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-	0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-	0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-	0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-	0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-	0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-	0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-	0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-	0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-	0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0
-};
-
-/**
- * Implements the standard CRC ITU-T V.41:
- *
- * Width 16
- * Poly  0x0x1021 (x^16 + x^12 + x^15 + 1)
- * Init  0
- *
- * @crc:     previous CRC value
- * @data:    data
- * @return:  Returns the updated CRC value
- */
-static inline uint16_t crc_itu_t_byte(uint16_t crc, const uint8_t data)
-{
-	return (crc << 8) ^ crc_itu_t_table[((crc >> 8) ^ data) & 0xff];
-}
-
-/**
- * crc_itu_t - Compute the CRC-ITU-T for the data buffer
- *
- * @crc:     previous CRC value
- * @buffer:  data pointer
- * @len:     number of bytes in the buffer
- * @return:  Returns the updated CRC value
- */
-uint16_t crc_itu_t(uint16_t crc, const uint8_t *buffer, size_t len)
-{
-	while (len--)
-		crc = crc_itu_t_byte(crc, *buffer++);
-	return crc;
-}
-
-/*-----------------------------------------------------------------------*/
 /* SPI controls (Platform dependent)                                     */
 /*-----------------------------------------------------------------------*/
 
@@ -247,6 +177,7 @@ static int spi_init_fast(void)
 	return 0;
 }
 
+#ifdef _VERBOSE_DEBUG
 /**
  * Function check the communication delay for single byte
  *
@@ -272,6 +203,7 @@ static void spi_check_delay(void)
 
 	log_printf("SPI communication delay %u CPU cycles", del / cnt);
 }
+#endif
 
 /* Exchange a byte */
 static uint8_t spi_xchg(uint8_t dat)
@@ -490,7 +422,7 @@ static int card_rcv_block(uint8_t *buff, size_t buff_size)
 	crc_rcv = (crc_rcv << 8) | spi_xchg(0xFF);
 
 	/* Calculate CRC */
-	crc_cal = crc_itu_t(0x0000, buff, buff_size);
+	crc_cal = crc_itu(0x0000, buff, buff_size);
 
 	/* compare CRC's */
 	if (crc_cal != crc_rcv) {
@@ -545,6 +477,10 @@ DSTATUS disk_initialize(uint8_t drv)
 	/* Supports only drive 0 */
 	if (drv > 0)
 		return STA_NOINIT;
+
+	/* Allow only for single initialization */
+	if (!(mmc_drv.mmc_status & STA_NOINIT))
+		return mmc_drv.mmc_status;
 
 	/* Initialize SPI */
 	if (spi_init())
@@ -612,8 +548,10 @@ DSTATUS disk_initialize(uint8_t drv)
 		if (spi_init_fast())
 			return STA_NOINIT;
 
+#ifdef _VERBOSE_DEBUG
 		/* Verify the speed settings */
 		spi_check_delay();
+#endif
 
 		/* Clear STA_NOINIT flag */
 		mmc_drv.mmc_status &= ~STA_NOINIT;
@@ -625,17 +563,20 @@ DSTATUS disk_initialize(uint8_t drv)
 	return mmc_drv.mmc_status;
 }
 
-#if 0
-
-DSTATUS disk_status (
-	uint8_t drv		/* Physical drive number (0) */
-)
+/** Function returns disk status
+ *
+ * @param drv - Physical drive number (0)
+ * #return Disk status
+ */
+DSTATUS disk_status(uint8_t drv)
 {
-	if (drv) return STA_NOINIT;		/* Supports only drive 0 */
+	/* Supports only drive 0 */
+	if (drv > 0)
+		return STA_NOINIT;
 
-	return mmc_drv.mmc_status;	/* Return disk status */
+	/* Return disk status */
+	return mmc_drv.mmc_status;
 }
-#endif
 
 /** Read sector(s)
  *
@@ -722,37 +663,47 @@ DRESULT disk_write (
 	return count ? RES_ERROR : RES_OK;	/* Return result */
 }
 #endif
+#endif
 
 /** Miscellaneous drive controls other than data read/write
- */
+ * @param drv - Physical drive number (0)
+ * @param cmd - Control command code
+ * @param buff - Pointer to the conrtol data
+ * @return - result of operation */
 #if _USE_IOCTL
-DRESULT disk_ioctl (
-	uint8_t drv,		/* Physical drive number (0) */
-	uint8_t cmd,		/* Control command code */
-	void *buff		/* Pointer to the conrtol data */
-)
+DRESULT disk_ioctl(uint8_t drv, uint8_t cmd, void *buff)
 {
 	DRESULT res;
 	uint8_t n, csd[16];
 	uint32_t *dp, st, ed, csize;
 
+	/* Check parameter - only one disk */
+	if (drv > 0)
+		return RES_PARERR;
 
-	if (drv) return RES_PARERR;					/* Check parameter */
-	if (mmc_drv.mmc_status & STA_NOINIT) return RES_NOTRDY;	/* Check if drive is ready */
+	/* Check if drive is ready */
+	if (mmc_drv.mmc_status & STA_NOINIT)
+		return RES_NOTRDY;
 
 	res = RES_ERROR;
 
 	switch (cmd) {
-	case CTRL_SYNC :		/* Wait for end of internal write process of the drive */
-		if (select()) res = RES_OK;
+	case CTRL_SYNC :
+		/* Wait for end of internal write process of the drive */
+		if (card_select())
+			res = RES_OK;
 		break;
 
-	case GET_SECTOR_COUNT :	/* Get drive capacity in unit of sector (uint32_t) */
+	case GET_SECTOR_COUNT :
+		/* Get drive capacity in unit of sector (uint32_t) */
+		/* Read CSD */
 		if ((card_send_cmd(CMD9, 0) == 0) && card_rcv_block(csd, 16)) {
-			if ((csd[0] >> 6) == 1) {	/* SDC ver 2.00 */
+			if ((csd[0] >> 6) == 1) {
+				/* SDC ver 2.00 */
 				csize = csd[9] + ((WORD)csd[8] << 8) + ((uint32_t)(csd[7] & 63) << 16) + 1;
 				*(uint32_t*)buff = csize << 10;
-			} else {					/* SDC ver 1.XX or MMC ver 3 */
+			} else {
+				/* SDC ver 1.XX or MMC ver 3 */
 				n = (csd[5] & 15) + ((csd[10] & 128) >> 7) + ((csd[9] & 3) << 1) + 2;
 				csize = (csd[8] >> 6) + ((WORD)csd[7] << 2) + ((WORD)(csd[6] & 3) << 10) + 1;
 				*(uint32_t*)buff = csize << (n - 9);
@@ -761,37 +712,63 @@ DRESULT disk_ioctl (
 		}
 		break;
 
-	case GET_BLOCK_SIZE :	/* Get erase block size in unit of sector (uint32_t) */
-		if (mmc_drv.card_type & CT_SD2) {	/* SDC ver 2.00 */
-			if (card_send_cmd(ACMD13, 0) == 0) {	/* Read SD status */
+	case GET_BLOCK_SIZE :
+		/* Get erase block size in unit of sector (uint32_t) */
+		if (mmc_drv.card_type & CT_SD2) {
+			/* SDC ver 2.00 */
+			if (card_send_cmd(ACMD13, 0) == 0) {
+				/* Read SD status */
 				spi_xchg(0xFF);
-				if (card_rcv_block(csd, 16)) {				/* Read partial block */
-					for (n = 64 - 16; n; n--) spi_xchg(0xFF);	/* Purge trailing data */
+				/* Read partial block */
+				if (card_rcv_block(csd, 16)) {
+					/* Purge trailing data */
+					for (n = 64 - 16; n; n--)
+						spi_xchg(0xFF);
 					*(uint32_t*)buff = 16UL << (csd[10] >> 4);
 					res = RES_OK;
 				}
 			}
-		} else {					/* SDC ver 1.XX or MMC */
-			if ((card_send_cmd(CMD9, 0) == 0) && card_rcv_block(csd, 16)) {	/* Read CSD */
-				if (mmc_drv.card_type & CT_SD1) {	/* SDC ver 1.XX */
-					*(uint32_t*)buff = (((csd[10] & 63) << 1) + ((WORD)(csd[11] & 128) >> 7) + 1) << ((csd[13] >> 6) - 1);
-				} else {					/* MMC */
-					*(uint32_t*)buff = ((WORD)((csd[10] & 124) >> 2) + 1) * (((csd[11] & 3) << 3) + ((csd[11] & 224) >> 5) + 1);
+		} else {
+			/* SDC ver 1.XX or MMC */
+			/* Read CSD */
+			if ((card_send_cmd(CMD9, 0) == 0) && card_rcv_block(csd, 16)) {
+				if (mmc_drv.card_type & CT_SD1) {
+					/* SDC ver 1.XX */
+					*(uint32_t*)buff = (((csd[10] & 63) << 1) +
+						((WORD)(csd[11] & 128) >> 7) + 1) << ((csd[13] >> 6) - 1);
+				} else {
+					/* MMC */
+					*(uint32_t*)buff = ((WORD)((csd[10] & 124) >> 2) + 1) *
+						(((csd[11] & 3) << 3) + ((csd[11] & 224) >> 5) + 1);
 				}
 				res = RES_OK;
 			}
 		}
 		break;
 
-	case CTRL_TRIM :	/* Erase a block of sectors (used when _USE_ERASE == 1) */
-		if (!(mmc_drv.card_type & CT_SDC)) break;				/* Check if the card is SDC */
-		if (disk_ioctl(drv, MMC_GET_CSD, csd)) break;	/* Get CSD */
-		if (!(csd[0] >> 6) && !(csd[10] & 0x40)) break;	/* Check if sector erase can be applied to the card */
-		dp = buff; st = dp[0]; ed = dp[1];				/* Load sector block */
+	case CTRL_TRIM :
+		/* Erase a block of sectors (used when _USE_ERASE == 1) */
+		/* Check if the card is SDC */
+		if (!(mmc_drv.card_type & CT_SDC))
+			break;
+		/* Get CSD */
+		if (disk_ioctl(drv, MMC_GET_CSD, csd))
+			break;
+		/* Check if sector erase can be applied to the card */
+		if (!(csd[0] >> 6) && !(csd[10] & 0x40))
+			break;
+		/* Load sector block */
+		dp = buff;
+		st = dp[0];
+		ed = dp[1];
 		if (!(mmc_drv.card_type & CT_BLOCK)) {
 			st *= 512; ed *= 512;
 		}
-		if (card_send_cmd(CMD32, st) == 0 && card_send_cmd(CMD33, ed) == 0 && card_send_cmd(CMD38, 0) == 0 && card_wait_ready(30000))	/* Erase sector block */
+		/* Erase sector block */
+		if (card_send_cmd(CMD32, st) == 0 &&
+		    card_send_cmd(CMD33, ed) == 0 &&
+		    card_send_cmd(CMD38, 0) == 0 &&
+		    card_wait_ready(30000))
 			res = RES_OK;	/* FatFs does not check result of this command */
 		break;
 
@@ -805,6 +782,7 @@ DRESULT disk_ioctl (
 }
 #endif
 
+#if 0
 /** Device timer function
  *
  * This function must be called from timer interrupt routine in period
