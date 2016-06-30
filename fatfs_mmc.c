@@ -138,6 +138,77 @@ volatile struct mmc_drv mmc_drv = {
 };
 
 /*-----------------------------------------------------------------------*/
+/* CRC calculation helper functions                                      */
+/*-----------------------------------------------------------------------*/
+
+/** CRC table for the CRC ITU-T V.41 0x0x1021 (x^16 + x^12 + x^15 + 1) */
+static const uint16_t crc_itu_t_table[256] = {
+	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+	0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
+	0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+	0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
+	0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
+	0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+	0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
+	0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
+	0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+	0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
+	0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+	0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+	0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
+	0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
+	0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+	0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
+	0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
+	0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+	0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
+	0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
+	0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+	0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+	0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
+	0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+	0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
+	0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
+	0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+	0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
+	0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
+	0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
+	0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
+	0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0
+};
+
+/**
+ * Implements the standard CRC ITU-T V.41:
+ *
+ * Width 16
+ * Poly  0x0x1021 (x^16 + x^12 + x^15 + 1)
+ * Init  0
+ *
+ * @crc:     previous CRC value
+ * @data:    data
+ * @return:  Returns the updated CRC value
+ */
+static inline uint16_t crc_itu_t_byte(uint16_t crc, const uint8_t data)
+{
+	return (crc << 8) ^ crc_itu_t_table[((crc >> 8) ^ data) & 0xff];
+}
+
+/**
+ * crc_itu_t - Compute the CRC-ITU-T for the data buffer
+ *
+ * @crc:     previous CRC value
+ * @buffer:  data pointer
+ * @len:     number of bytes in the buffer
+ * @return:  Returns the updated CRC value
+ */
+uint16_t crc_itu_t(uint16_t crc, const uint8_t *buffer, size_t len)
+{
+	while (len--)
+		crc = crc_itu_t_byte(crc, *buffer++);
+	return crc;
+}
+
+/*-----------------------------------------------------------------------*/
 /* SPI controls (Platform dependent)                                     */
 /*-----------------------------------------------------------------------*/
 
@@ -219,7 +290,7 @@ static int spi_rcvr_multi(uint8_t *buff, size_t cnt)
 	 * bufered operation. In case cnt == 1 we will not execute the upper loop */
 	while (!nrf_spi_event_check(MMC_SPI, NRF_SPI_EVENT_READY));
 	nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
-	
+
 	buff[rx++] = nrf_spi_rxd_get(MMC_SPI);
 
 	return 0;
@@ -283,14 +354,14 @@ static int card_wait_ready(size_t wt)
 	return (d == 0xFF) ? 1 : 0;
 }
 
-/** Deselect card and release SPI                                        
+/** Deselect card and release SPI
  */
 static void card_deselect(void)
 {
 	/* Set CS# high */
-	CS_HIGH();	
+	CS_HIGH();
 	/* Dummy clock (force DO hi-z for multiple slave SPI) */
-	spi_xchg(0xFF);	
+	spi_xchg(0xFF);
 }
 
 /** Enable chip select for the card and verify its activation
@@ -363,16 +434,18 @@ static uint8_t card_send_cmd(uint8_t cmd, uint32_t arg)
 /** Receive the data block from card
  *
  * @param buff - Data buffer
- * @cnt - Size of data buffer
+ * @buff_size - Size of data buffer
  * @return 1 - OK, 0 - Error
  */
-static int card_rcv_block(uint8_t *buff, size_t btr)
+static int card_rcv_block(uint8_t *buff, size_t buff_size)
 {
+	uint16_t crc_rcv;
+	uint16_t crc_cal;
 	uint8_t token;
 
 	/* Wait for DataStart token in timeout of 200ms */
 	mmc_drv.timer1 = 200;
-	do {							
+	do {
 		token = spi_xchg(0xFF);
 		/* This loop will take a time. Insert rot_rdq() here for multitask envilonment. */
 	} while ((token == 0xFF) && mmc_drv.timer1);
@@ -382,11 +455,20 @@ static int card_rcv_block(uint8_t *buff, size_t btr)
 		return 0; /* Error */
 
 	/* Store data to the buffer */
-	spi_rcvr_multi(buff, btr);		
+	spi_rcvr_multi(buff, buff_size);
 
-	/* Discard CRC */
-	spi_xchg(0xFF);
-	spi_xchg(0xFF);			
+	/* Receive CRC */
+	crc_rcv = spi_xchg(0xFF);
+	crc_rcv = (crc_rcv << 8) | spi_xchg(0xFF);
+
+	/* Calculate CRC */
+	crc_cal = crc_itu_t(0x0000, buff, buff_size);
+
+	/* compare CRC's */
+	if (crc_cal != crc_rcv) {
+		log_printf("CRC error!");
+		return 0; /* Error */
+	}
 
 	return 1; /* Success */
 }
@@ -479,17 +561,19 @@ DSTATUS disk_initialize(uint8_t drv)
 			/* SDv1 or MMC? */
 			if (card_send_cmd(ACMD41, 0) <= 1) {
 				/* SDv1 (ACMD41(0)) */
-				card_type = CT_SD1; cmd = ACMD41;
+				card_type = CT_SD1;
+				cmd = ACMD41;
 			} else {
 				/* MMCv3 (CMD1(0)) */
-				card_type = CT_MMC; cmd = CMD1;
+				card_type = CT_MMC;
+				cmd = CMD1;
 			}
 			/* Wait for end of initialization */
-			while (mmc_drv.timer1 && card_send_cmd(cmd, 0)) ;
+			while (mmc_drv.timer1 && card_send_cmd(cmd, 0));
 
 			/* Set block length: 512 */
 			if (!mmc_drv.timer1 || card_send_cmd(CMD16, 512) != 0)
-				card_type = 0;
+				card_type = CT_UNKNOWN;
 		}
 	}
 	mmc_drv.card_type = card_type;
@@ -522,7 +606,7 @@ DSTATUS disk_status (
 }
 #endif
 
-/** Read sector(s)                                                        
+/** Read sector(s)
  *
  * @param drv - Physical drive number (0)
  * @param buff - Pointer to the data buffer to store read data
@@ -532,18 +616,18 @@ DSTATUS disk_status (
 DRESULT disk_read(uint8_t drv, uint8_t *buff, uint32_t sector, size_t count)
 {
 	/* Check parameters (only one disc, > 1 sector) */
-	if ((drv > 0) || !count) 
-		return RES_PARERR;		
+	if ((drv > 0) || !count)
+		return RES_PARERR;
 
 	/* Check if drive is ready */
 	if (mmc_drv.mmc_status & STA_NOINIT)
-		return RES_NOTRDY;	
+		return RES_NOTRDY;
 
 	/* LBA ot BA conversion (byte addressing cards) */
 	if (!(mmc_drv.card_type & CT_BLOCK))
-		sector *= 512;	
+		sector *= 512;
 
-	if (count == 1) {	
+	if (count == 1) {
 		/* Single sector read */
 		if ((card_send_cmd(CMD17, sector) == 0) &&
 			 card_rcv_block(buff, 512))
@@ -558,6 +642,10 @@ DRESULT disk_read(uint8_t drv, uint8_t *buff, uint32_t sector, size_t count)
 			} while (--count);
 			/* Stop multiple block transmision */
 			card_send_cmd(CMD12, 0);
+
+			/* TODO the last command may interfere with tuffing
+			 * bytes from last COM18. Do card_send_cmd() is prepared
+			 * for such unexpected bytes ? */
 		}
 	}
 	card_deselect();
@@ -566,7 +654,7 @@ DRESULT disk_read(uint8_t drv, uint8_t *buff, uint32_t sector, size_t count)
 }
 
 #if 0
-/** Write sector(s)                                                      
+/** Write sector(s)
  */
 #if _USE_WRITE
 DRESULT disk_write (
@@ -686,7 +774,7 @@ DRESULT disk_ioctl (
 }
 #endif
 
-/** Device timer function                                                
+/** Device timer function
  *
  * This function must be called from timer interrupt routine in period
  * of 1 ms to generate card control timing.
