@@ -64,13 +64,32 @@ void board_setup(void)
 	}
 	log_printf("MMC read done. Read %u sectors", i);
 
-	FATFS fs;
-	FIL fp;
-	if (f_mount(&fs, "0:", 1))
-		log_printf("f_mount error");
-	if (FR_OK != f_open(&fp, "0:\\plik.txt", FA_READ | FA_CREATE_NEW))
-		log_printf("Open file error");
+	do {
+		FATFS fs;
+		FIL fp;
+		UINT bw;
 
+		if (f_mount(&fs, "0:", 1)) {
+			log_printf("f_mount error");
+			break;
+		}
+
+		if (FR_OK != f_open(&fp, "0:\\plik.txt", 
+								  FA_WRITE | FA_CREATE_ALWAYS)) {
+			log_printf("Open file error");
+			break;
+		}
+
+		if (FR_OK != f_write(&fp, "Hello world\r\n", 13, &bw)) {
+			 log_printf("Write file error");
+			 break;
+		}
+
+		if (FR_OK != f_close(&fp)) {
+			 log_printf("Close file error");
+			 break;
+		}
+	} while (0);
 }
 
 void dump_card(void)

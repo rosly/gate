@@ -22,76 +22,6 @@
 #include "fatfs_diskio.h"
 #include "crc_itu.h"
 
-#if 0
-#define SPI_CH	1	/* SPI channel to use = 1: SPI1, 11: SPI1/remap, 2: SPI2 */
-
-#define FCLK_SLOW() { SPIx_CR1 = (SPIx_CR1 & ~0x38) | 0x28; }	/* Set SCLK = PCLK / 64 */
-#define FCLK_FAST() { SPIx_CR1 = (SPIx_CR1 & ~0x38) | 0x00; }	/* Set SCLK = PCLK / 2 */
-
-#if SPI_CH == 1	/* PA4:MMC_CS, PA5:MMC_SCLK, PA6:MMC_DO, PA7:MMC_DI, PC4:MMC_CD */
-#define CS_HIGH()	GPIOA_BSRR = _BV(4)
-#define CS_LOW()	GPIOA_BSRR = _BV(4+16)
-#define	MMC_CD		!(GPIOC_IDR & _BV(4))	/* Card detect (yes:true, no:false, default:true) */
-#define	MMC_WP		0 /* Write protected (yes:true, no:false, default:false) */
-#define SPIx_CR1	SPI1_CR1
-#define SPIx_SR		SPI1_SR
-#define SPIx_DR		SPI1_DR
-#define	SPIxENABLE() {\
-	__enable_peripheral(SPI1EN);\
-	__enable_peripheral(IOPAEN);\
-	__enable_peripheral(IOPCEN);\
-	__gpio_conf_bit(GPIOA, 4, OUT_PP);						/* PA4: MMC_CS */\
-	__gpio_conf_bit(GPIOA, 5, ALT_PP);						/* PA5: MMC_SCLK */\
-	GPIOA_BSRR = _BV(6); __gpio_conf_bit(GPIOA, 6, IN_PUL); /* PA6: MMC_DO with pull-up */\
-	__gpio_conf_bit(GPIOA, 7, ALT_PP);						/* PA7: MMC_DI */\
-	GPIOC_BSRR = _BV(4); __gpio_conf_bit(GPIOC, 4, IN_PUL);	/* PC4: MMC_CD with pull-up */\
-	SPIx_CR1 = _BV(9)|_BV(8)|_BV(6)|_BV(2);					/* Enable SPI1 */\
-}
-
-#elif SPI_CH == 11	/* PA15:MMC_CS, PB3:MMC_SCLK, PB4:MMC_DO, PB5:MMC_DI, PB6:MMC_CD */
-#define CS_HIGH()	GPIOA_BSRR = _BV(15)
-#define CS_LOW()	GPIOA_BSRR = _BV(15+16)
-#define	MMC_CD		!(GPIOB_IDR & _BV(6))	/* Card detect (yes:true, no:false, default:true) */
-#define	MMC_WP		0 /* Write protected (yes:true, no:false, default:false) */
-#define SPIx_CR1	SPI1_CR1
-#define SPIx_SR		SPI1_SR
-#define SPIx_DR		SPI1_DR
-#define	SPIxENABLE() {\
-	AFIO_MAPR |= _BV(1);
-	__enable_peripheral(SPI1EN);\
-	__enable_peripheral(IOPAEN);\
-	__enable_peripheral(IOPBEN);\
-	__gpio_conf_bit(GPIOA, 15, OUT_PP); 						/* PA15: MMC_CS */\
-	__gpio_conf_bit(GPIOB, 3, ALT_PP);							/* PB3: MMC_SCLK */\
-	GPIOB_BSRR = _BV(4); __gpio_conf_bit(GPIOB, 4, IN_PUL);		/* PB4: MMC_DO with pull-up */\
-	__gpio_conf_bit(GPIOB, 5, ALT_PP);							/* PB5: MMC_DI */\
-	GPIOB_BSRR = _BV(6); __gpio_conf_bit(GPIOB, 6, IN_PUL);		/* PB6: MMC_CD with pull-up */\
-	SPIx_CR1 = _BV(9)|_BV(8)|_BV(6)|_BV(2);						/* Enable SPI1 */\
-}
-
-#elif SPI_CH == 2	/* PB12:MMC_CS, PB13:MMC_SCLK, PB14:MMC_DO, PB15:MMC_DI, PD8:MMC_CD */
-#define CS_HIGH()	GPIOB_BSRR = _BV(12)
-#define CS_LOW()	GPIOB_BSRR = _BV(12+16)
-#define	MMC_CD		!(GPIOD_IDR & _BV(8))	/* Card detect (yes:true, no:false, default:true) */
-#define	MMC_WP		0 /* Write protected (yes:true, no:false, default:false) */
-#define SPIx_CR1	SPI2_CR1
-#define SPIx_SR		SPI2_SR
-#define SPIx_DR		SPI2_DR
-#define	SPIxENABLE() {\
-	__enable_peripheral(SPI2EN);\
-	__enable_peripheral(IOPBEN);\
-	__enable_peripheral(IOPDEN);\
-	__gpio_conf_bit(GPIOB, 12, OUT_PP);							/* PB12: MMC_CS */\
-	__gpio_conf_bit(GPIOB, 13, ALT_PP);							/* PB13: MMC_SCLK */\
-	GPIOB_BSRR = _BV(14); __gpio_conf_bit(GPIOB, 14, IN_PUL); 	/* PB14: MMC_DO with pull-up */\
-	__gpio_conf_bit(GPIOB, 15, ALT_PP);							/* PB15: MMC_DI */\
-	GPIOD_BSRR = _BV(8); __gpio_conf_bit(GPIOD, 8, IN_PUL); 	/* PD8: MMC_CD with pull-up */\
-	SPIx_CR1 = _BV(9)|_BV(8)|_BV(6)|_BV(2);						/* Enable SPI1 */\
-}
-
-#endif
-#endif
-
 /* SPI IO defines */
 #define MMC_SPI NRF_SPI1
 #define SPI_CONFIG_SCK_PIN SPI1_CONFIG_SCK_PIN
@@ -223,12 +153,12 @@ static uint8_t spi_xchg(uint8_t dat)
 }
 
 /* Receive multiple byte */
-static int spi_rcvr_multi(uint8_t *buff, size_t cnt)
+static void spi_rcvr_multi(uint8_t *buff, size_t cnt)
 {
 	size_t rx = 0;
 
 	if (cnt == 0)
-		return 0;
+		return;
 
 	/* transmiter will start SPI clock after write operation to TXD register
 	 * TXD register is double buffered (same RXD) so we put two bytes there in
@@ -252,44 +182,45 @@ static int spi_rcvr_multi(uint8_t *buff, size_t cnt)
 	nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
 
 	buff[rx++] = nrf_spi_rxd_get(MMC_SPI);
-
-	return 0;
 }
 
-#if 0
 #if _USE_WRITE
-/* Send multiple byte */
-static
-void spi_xmit_multi (
-	const uint8_t *buff,	/* Pointer to the data */
-	size_t btx			/* Number of bytes to send (even number) */
-)
+/** 
+ * Send multiple byte
+ *
+ * @param buff - Pointer to the data
+ * @param cnt - Number of bytes to send (even number)
+ */
+static void spi_xmit_multi(const uint8_t *buff, size_t cnt)
 {
-	WORD d;
+	size_t tx = 0;
 
+	if (cnt == 0)
+		return;
 
-	SPIx_CR1 &= ~_BV(6);
-	SPIx_CR1 |= (_BV(6) | _BV(11));		/* Set SPI to 16-bit mode */
+	/* transmiter will start SPI clock after write operation to TXD register
+	 * TXD register is double buffered (same RXD) so we put two bytes there in
+	 * serie. Start transmiting first byte */
+	nrf_spi_txd_set(MMC_SPI, buff[tx++]);
 
-	d = buff[0] << 8 | buff[1];
-	SPIx_DR = d;
-	buff += 2;
-	btx -= 2;
-	do {					/* Receive the data block into buffer */
-		d = buff[0] << 8 | buff[1];
-		while (SPIx_SR & _BV(7)) ;
-		SPIx_DR;
-		SPIx_DR = d;
-		buff += 2;
-	} while (btx -= 2);
-	while (SPIx_SR & _BV(7)) ;
-	SPIx_DR;
+	/* next, xmit and receive required amout of bytes */
+	while (cnt > tx) {
+		nrf_spi_txd_set(MMC_SPI, buff[tx++]);
 
-	SPIx_CR1 &= ~(_BV(6) | _BV(11));	/* Set SPI to 8-bit mode */
-	SPIx_CR1 |= _BV(6);
+		/* wait until xmit and receive is finished */
+		while (!nrf_spi_event_check(MMC_SPI, NRF_SPI_EVENT_READY));
+		nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
+		/* we must read the RX register even if we will not use the recv byte */
+		(void)nrf_spi_rxd_get(MMC_SPI);
+	}
+
+	/* finally, wait and receive te final byte which was cheduled by double
+	 * bufered operation. In case cnt == 1 we will not execute the upper loop */
+	while (!nrf_spi_event_check(MMC_SPI, NRF_SPI_EVENT_READY));
+	nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
+	/* we must read the RX register even if we will not use the recv byte */
+	(void)nrf_spi_rxd_get(MMC_SPI);
 }
-#endif
-
 #endif
 
 /*-----------------------------------------------------------------------*/
@@ -391,7 +322,8 @@ static uint8_t card_send_cmd(uint8_t cmd, uint32_t arg)
 	return res;				/* Return received response */
 }
 
-/** Receive the data block from card
+/**
+ * Receive the data block from card
  *
  * @param buff - Data buffer
  * @buff_size - Size of data buffer
@@ -433,31 +365,39 @@ static int card_rcv_block(uint8_t *buff, size_t buff_size)
 	return 1; /* Success */
 }
 
-#if 0
 #if _USE_WRITE
-static
-int xmit_datablock (	/* 1:OK, 0:Failed */
-	const uint8_t *buff,	/* Ponter to 512 byte data to be sent */
-	uint8_t token			/* Token */
-)
+/**
+ * Transmit the data block to card
+ *
+ * @param buff - Ponter to 512 byte data to be sent
+ * @param token - Token ????
+ *
+ * @return :OK, 0:Failed
+ */
+static int card_xmit_datablock(const uint8_t *buff, uint8_t token)
 {
 	uint8_t resp;
 
+	/* Wait for card ready */
+	if (!card_wait_ready(500))
+		return 0;	
 
-	if (!card_wait_ready(500)) return 0;		/* Wait for card ready */
+	/* Send token */
+	spi_xchg(token);					
 
-	spi_xchg(token);					/* Send token */
-	if (token != 0xFD) {				/* Send data if token is other than StopTran */
-		spi_xmit_multi(buff, 512);		/* Data */
-		spi_xchg(0xFF); spi_xchg(0xFF);	/* Dummy CRC */
+	/* Send data if token is other than StopTran */
+	if (token != 0xFD) {	
+		spi_xmit_multi(buff, 512); /* Data */
+		spi_xchg(0xFF); spi_xchg(0xFF); /* Dummy CRC */
 
-		resp = spi_xchg(0xFF);				/* Receive data resp */
-		if ((resp & 0x1F) != 0x05)		/* Function fails if the data packet was not accepted */
+		/* Receive data resp */
+		resp = spi_xchg(0xFF);		
+		/* Function fails if the data packet was not accepted */
+		if ((resp & 0x1F) != 0x05)	
 			return 0;
 	}
 	return 1;
 }
-#endif
 #endif
 
 /*--------------------------------------------------------------------------
@@ -625,36 +565,56 @@ DRESULT disk_read(uint8_t drv, uint8_t *buff, uint32_t sector, size_t count)
 	return count ? RES_ERROR : RES_OK;	/* Return result */
 }
 
-#if 0
-/** Write sector(s)
+/**
+ * Write sector(s)
+ *
+ * @param drv - Physical drive number (0)
+ * @param buff - Ponter to the data to write
+ * @param sector - Start sector number (LBA)
+ * @param count - Number of sectors to write (1..128)
+ *
+ * @return - Result of operation
  */
 #if _USE_WRITE
-DRESULT disk_write (
-	uint8_t drv,			/* Physical drive number (0) */
-	const uint8_t *buff,	/* Ponter to the data to write */
-	uint32_t sector,		/* Start sector number (LBA) */
-	size_t count			/* Number of sectors to write (1..128) */
-)
+DRESULT disk_write(uint8_t drv, const uint8_t *buff, uint32_t sector, size_t count)
 {
-	if (drv || !count) return RES_PARERR;		/* Check parameter */
-	if (mmc_drv.mmc_status & STA_NOINIT) return RES_NOTRDY;	/* Check drive status */
-	if (mmc_drv.mmc_status & STA_PROTECT) return RES_WRPRT;	/* Check write protect */
+	/* Check parameter  - only one disk allowed */
+	if (drv || !count)
+		return RES_PARERR;
 
-	if (!(mmc_drv.card_type & CT_BLOCK)) sector *= 512;	/* LBA ==> BA conversion (byte addressing cards) */
+	/* Check drive status */
+	if (mmc_drv.mmc_status & STA_NOINIT) 
+		return RES_NOTRDY;	
 
-	if (count == 1) {	/* Single sector write */
-		if ((card_send_cmd(CMD24, sector) == 0)	/* WRITE_BLOCK */
-			&& xmit_datablock(buff, 0xFE))
-			count = 0;
+	/* Check write protect */
+	if (mmc_drv.mmc_status & STA_PROTECT)
+		return RES_WRPRT;
+
+	/* LBA ==> BA conversion for byte addressing cards */
+	if (!(mmc_drv.card_type & CT_BLOCK))
+		sector *= 512;	
+
+	if (count == 1) {
+		/* Single sector write */
+		if ((card_send_cmd(CMD24, sector) == 0) &&
+			  card_xmit_datablock(buff, 0xFE))
+				count = 0;
 	}
-	else {				/* Multiple sector write */
-		if (mmc_drv.card_type & CT_SDC) card_send_cmd(ACMD23, count);	/* Predefine number of sectors */
-		if (card_send_cmd(CMD25, sector) == 0) {	/* WRITE_MULTIPLE_BLOCK */
+	else {			
+		/* Multiple sector write */
+		/* Predefine number of sectors */
+		if (mmc_drv.card_type & CT_SDC) 
+			card_send_cmd(ACMD23, count);	
+
+		if (card_send_cmd(CMD25, sector) == 0) {
 			do {
-				if (!xmit_datablock(buff, 0xFC)) break;
+				if (!card_xmit_datablock(buff, 0xFC))
+					break; /* Error */
 				buff += 512;
 			} while (--count);
-			if (!xmit_datablock(0, 0xFD))	/* STOP_TRAN token */
+
+			/* STOP_TRAN token */
+			if (!card_xmit_datablock(0, 0xFD))	
 				count = 1;
 		}
 	}
@@ -662,7 +622,6 @@ DRESULT disk_write (
 
 	return count ? RES_ERROR : RES_OK;	/* Return result */
 }
-#endif
 #endif
 
 /** Miscellaneous drive controls other than data read/write
