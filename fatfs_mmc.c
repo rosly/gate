@@ -238,10 +238,39 @@ static int spi_init(void)
 static int spi_init_fast(void)
 {
 	nrf_spi_disable(MMC_SPI);
-	nrf_spi_frequency_set(MMC_SPI, NRF_SPI_FREQ_1M);
+	/* 3 CPU cycle delay for 1M
+	 * 1 CPu cycle delay for 2 and 4M
+	 * 0 CPU cycle delay for 8M */
+	nrf_spi_frequency_set(MMC_SPI, NRF_SPI_FREQ_8M);
 	nrf_spi_enable(MMC_SPI);
 
 	return 0;
+}
+
+/**
+ * Function check the communication delay for single byte
+ *
+ * Function is for debug purposes only
+ */
+static void spi_check_delay(void)
+{
+	const size_t cnt = 10;
+	size_t i;
+	size_t del = 0;
+	uint8_t ret;
+
+	/* Send one byte at a time and sum the delay */
+	for (i = cnt; i > 0; i--) {
+		nrf_spi_txd_set(MMC_SPI, 0xff);
+		while (!nrf_spi_event_check(MMC_SPI, NRF_SPI_EVENT_READY))
+			del++;
+		nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
+		ret = nrf_spi_rxd_get(MMC_SPI);
+		if (ret != 0xff)
+			log_printf("Received invalid dummy data 0x%02x", ret);
+	}
+
+	log_printf("SPI communication delay %u CPU cycles", del / cnt);
 }
 
 /* Exchange a byte */
@@ -257,7 +286,6 @@ static uint8_t spi_xchg(uint8_t dat)
 		i++;
 	nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
 	ret = nrf_spi_rxd_get(MMC_SPI);
-	log_printf("spi_xchg() dat=0x%02x ret=0x%02x i=%u", dat, ret, i);
 
 	return ret;
 }
@@ -583,6 +611,9 @@ DSTATUS disk_initialize(uint8_t drv)
 		/* Set fast clock */
 		if (spi_init_fast())
 			return STA_NOINIT;
+
+		/* Verify the speed settings */
+		spi_check_delay();
 
 		/* Clear STA_NOINIT flag */
 		mmc_drv.mmc_status &= ~STA_NOINIT;
