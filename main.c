@@ -8,7 +8,7 @@
 #include <sdk_errors.h> /* for ret_code_t and error defines */
 #include <nrf_delay.h>
 
-#include "uart_log.h"
+#include "log_debug.h"
 #include "sodium.h"
 #include "pn532.h" /* for pn532 driver */
 #include "fatfs_diskio.h"
@@ -17,7 +17,7 @@
 #define ERR_CHECK(_err_code) \
   do { \
       if (_err_code != NRF_SUCCESS) { \
-          log_printf("Error! %s:%d\r\n", __FILE__, __LINE__); \
+          log_debug_printf("Error! %s:%d\r\n", __FILE__, __LINE__); \
           while(1); \
       } \
   } while(0);
@@ -46,9 +46,9 @@ void board_setup(void)
    LEDS_CONFIGURE(LEDS_MASK);
    LEDS_OFF(LEDS_MASK);
 
-   log_init();
+   log_debug_init();
 
-   log_printf("Initializing pn532");
+   log_debug_printf("Initializing pn532");
    err_code = pn532_init(false);
    ERR_CHECK(err_code);
 
@@ -59,10 +59,10 @@ void board_setup(void)
 		uint8_t buff[512];
 		if (RES_OK != disk_read(0, buff, i, 1))
 			break;
-		//log_printf("Sector %u", i);
-		//log_hex("", buff, 512);
+		//log_debug_printf("Sector %u", i);
+		//log_debug_hex("", buff, 512);
 	}
-	log_printf("MMC read done. Read %u sectors", i);
+	log_debug_printf("MMC read done. Read %u sectors", i);
 
 	do {
 		FATFS fs;
@@ -70,23 +70,23 @@ void board_setup(void)
 		UINT bw;
 
 		if (f_mount(&fs, "0:", 1)) {
-			log_printf("f_mount error");
+			log_debug_printf("f_mount error");
 			break;
 		}
 
 		if (FR_OK != f_open(&fp, "0:\\plik.txt", 
 								  FA_WRITE | FA_CREATE_ALWAYS)) {
-			log_printf("Open file error");
+			log_debug_printf("Open file error");
 			break;
 		}
 
 		if (FR_OK != f_write(&fp, "Hello world\r\n", 13, &bw)) {
-			 log_printf("Write file error");
+			 log_debug_printf("Write file error");
 			 break;
 		}
 
 		if (FR_OK != f_close(&fp)) {
-			 log_printf("Close file error");
+			 log_debug_printf("Close file error");
 			 break;
 		}
 	} while (0);
@@ -110,34 +110,34 @@ void dump_card(void)
     err_code = pn532_read_passive_target_id(
        PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
     if (err_code != NRF_SUCCESS) {
-        log_printf("Error while scaning tag %u", err_code);
+        log_debug_printf("Error while scaning tag %u", err_code);
         return;
     }
 
-    log_printf("Tag detected uid_length=%u", uid_length);
-    log_hex("uid:", uid, uid_length);
+    log_debug_printf("Tag detected uid_length=%u", uid_length);
+    log_debug_hex("uid:", uid, uid_length);
 
     if (uid_length == 4) {
-        log_printf("Tag is probably Mifare Clasic. Reading...");
+        log_debug_printf("Tag is probably Mifare Clasic. Reading...");
 
         auth_key = def_mifare_key;
         if (pn532_mifareclassic_authenticateblock(
               uid, uid_length, 4, MIFARE_AUTH_KEY_A, auth_key)) {
-            log_printf("Failed while using default key. Trying the \"gate\" key...");
+            log_debug_printf("Failed while using default key. Trying the \"gate\" key...");
 
             /* some bug causes that after invalid auth, all following auth also
              * does failure. Therefore we rescan which reset the state machine */
             err_code = pn532_read_passive_target_id(
                PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
             if (err_code != NRF_SUCCESS) {
-                log_printf("Error while scaning tag %u", err_code);
+                log_debug_printf("Error while scaning tag %u", err_code);
                 return;
             }
 
             auth_key = gate_mifare_key;
             if (pn532_mifareclassic_authenticateblock(
                   uid, uid_length, 4, MIFARE_AUTH_KEY_A, auth_key)) {
-                log_printf("Failed while using \"gate\" key, bailing out.");
+                log_debug_printf("Failed while using \"gate\" key, bailing out.");
                 return;
             }
         }
@@ -145,20 +145,20 @@ void dump_card(void)
         for (i = 0; i < 16; i++) {
             if (pn532_mifareclassic_authenticateblock(
                   uid, uid_length, i, MIFARE_AUTH_KEY_A, auth_key)) {
-                log_printf("Error while block auth");
+                log_debug_printf("Error while block auth");
                 return;
             }
 
             if (pn532_mifareclassic_readdatablock(i, block_data, sizeof(block_data))) {
-                log_printf("Error while block read");
+                log_debug_printf("Error while block read");
                 return;
             }
 
             snprintf(trailer, sizeof(trailer), "Block[%02u]:", i);
-            log_hex(trailer, block_data, 16);
+            log_debug_hex(trailer, block_data, 16);
         }
 
-        log_printf("Dump done.");
+        log_debug_printf("Dump done.");
     }
 }
 
@@ -183,51 +183,51 @@ void tag_init(void)
     err_code = pn532_read_passive_target_id(
        PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
     if (err_code != NRF_SUCCESS) {
-        log_printf("Error while scaning tag %u", err_code);
+        log_debug_printf("Error while scaning tag %u", err_code);
         goto err;
     }
 
     LEDS_ON(BSP_LED_2_MASK);
-    log_printf("Tag detected uid_length=%u", uid_length);
-    log_hex("uid:", uid, uid_length);
+    log_debug_printf("Tag detected uid_length=%u", uid_length);
+    log_debug_hex("uid:", uid, uid_length);
 
     if (uid_length == 4) {
-        log_printf("Tag is probably Mifare Clasic. Reading...");
+        log_debug_printf("Tag is probably Mifare Clasic. Reading...");
 
          /* Copy the uid into auth stream */
          memcpy(auth_data, uid, 4);
 
          /* Read the access rights into auth stream */
-         log_printf("Reading access rights ...");
+         log_debug_printf("Reading access rights ...");
          block = 4;
          if (pn532_mifareclassic_authenticateblock(
                uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
-             log_printf("Error while unlocking block");
+             log_debug_printf("Error while unlocking block");
              goto err;
          }
 
          if (pn532_mifareclassic_readdatablock(
                block, &auth_data[4], sizeof(auth_data) - 4)) {
-             log_printf("Error while reading user auth block");
+             log_debug_printf("Error while reading user auth block");
              goto err;
          }
-         log_hex("Auth data:", auth_data, 4 + 16);
+         log_debug_hex("Auth data:", auth_data, 4 + 16);
 
-         log_printf("Writing check data...");
+         log_debug_printf("Writing check data...");
          block = 5;
          pn532_mifareclasic_value_format(0x00000000, check_data, block);
-         log_hex("Check data:", check_data, 16);
+         log_debug_hex("Check data:", check_data, 16);
          if (pn532_mifareclassic_writedatablock(
                block, check_data)) {
-             log_printf("Error while writing check block");
+             log_debug_printf("Error while writing check block");
              goto err;
          }
 
-         log_printf("Writing sig...");
+         log_debug_printf("Writing sig...");
          ret = crypto_sign_ed25519_detached(
               crypto_sig, &sig_len, auth_data, sizeof(auth_data), crypto_sk);
          if(ret || (sig_len != 64)) {
-            log_printf("Sign error\n");
+            log_debug_printf("Sign error\n");
             goto err;
          }
 
@@ -235,20 +235,20 @@ void tag_init(void)
             block = (i + 8) + (i==3?1:0); /* omit 11th block */
             if (pn532_mifareclassic_authenticateblock(
                   uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
-                log_printf("Error while unlocking block");
+                log_debug_printf("Error while unlocking block");
                 goto err;
             }
 
             if (pn532_mifareclassic_writedatablock(
                   block, &crypto_sig[i * 16])) {
-                log_printf("Error while writing user auth block");
+                log_debug_printf("Error while writing user auth block");
                 goto err;
             }
 
-            log_hex("Write auth sig:", &crypto_sig[i*16], 16);
+            log_debug_hex("Write auth sig:", &crypto_sig[i*16], 16);
          }
 
-         log_printf("Securing block access rights and keys");
+         log_debug_printf("Securing block access rights and keys");
          memcpy(auth_data, gate_mifare_key, 6);
          /* following are the access rights, those are bit encoded with some redundant
 	  * information encoded as inversed bit values. To decode the access
@@ -266,22 +266,22 @@ void tag_init(void)
             block = i*4 + 3;
             if (pn532_mifareclassic_authenticateblock(
                   uid, uid_length, block, MIFARE_AUTH_KEY_A, def_mifare_key)) {
-                log_printf("Error while unlocking block");
+                log_debug_printf("Error while unlocking block");
                 goto err;
             }
 
-            log_hex("Secure block:", auth_data, 16);
+            log_debug_hex("Secure block:", auth_data, 16);
 
             if (pn532_mifareclassic_writedatablock(
                   block, auth_data)) {
-                log_printf("Error while writing auth block");
+                log_debug_printf("Error while writing auth block");
                 goto err;
             }
 
-         log_printf("Sector %u secured", i);
+         log_debug_printf("Sector %u secured", i);
          }
 
-         log_printf("Writing OK!");
+         log_debug_printf("Writing OK!");
          nrf_delay_ms(1000);
     }
 
@@ -309,87 +309,87 @@ void tag_scan(void)
     err_code = pn532_read_passive_target_id(
        PN532_MIFARE_ISO14443A_BAUD, uid, &uid_length, TAG_DETECT_TIMEOUT);
     if (err_code != NRF_SUCCESS) {
-        log_printf("Error while scaning tag %u", err_code);
+        log_debug_printf("Error while scaning tag %u", err_code);
         goto err;
     }
 
     LEDS_ON(BSP_LED_2_MASK);
-    log_printf("Tag detected uid_length=%u", uid_length);
-    log_hex("uid:", uid, uid_length);
+    log_debug_printf("Tag detected uid_length=%u", uid_length);
+    log_debug_hex("uid:", uid, uid_length);
 
     if (uid_length == 4) {
-        log_printf("Tag is probably Mifare Clasic. Reading...");
+        log_debug_printf("Tag is probably Mifare Clasic. Reading...");
 
          /* Copy the uid into auth stream */
          memcpy(auth_data, uid, 4);
 
          /* Read the access rights into auth stream */
-         log_printf("Reading access rights ...");
+         log_debug_printf("Reading access rights ...");
          block = 4;
          if (pn532_mifareclassic_authenticateblock(
                uid, uid_length, block, MIFARE_AUTH_KEY_A, gate_mifare_key)) {
-             log_printf("Error while unlocking block");
+             log_debug_printf("Error while unlocking block");
              goto err;
          }
 
          if (pn532_mifareclassic_readdatablock(
                block, &auth_data[4], sizeof(auth_data) - 4)) {
-             log_printf("Error while reading user auth block");
+             log_debug_printf("Error while reading user auth block");
              goto err;
          }
-         log_hex("Auth data:", auth_data, 4 + 16);
+         log_debug_hex("Auth data:", auth_data, 4 + 16);
 
          block = 5;
          if (pn532_mifareclassic_readdatablock(
                block, check_data, sizeof(check_data))) {
-             log_printf("Error while reading check_data block");
+             log_debug_printf("Error while reading check_data block");
              goto err;
          }
-         log_hex("Checkpoint data:", check_data, sizeof(check_data));
+         log_debug_hex("Checkpoint data:", check_data, sizeof(check_data));
 
-         log_printf("Validating check_data...");
+         log_debug_printf("Validating check_data...");
          if (pn532_mifareclasic_value_verify(&check_val, check_data, block)) {
-             log_printf("Check validation error");
+             log_debug_printf("Check validation error");
              goto err;
          }
-         log_printf("Check value %u", check_val);
+         log_debug_printf("Check value %u", check_val);
 
-         log_printf("Incrementing check point...");
+         log_debug_printf("Incrementing check point...");
          if (pn532_mifareclassic_increment(block, 0x01)) {
-             log_printf("Error while incrementing checkpoint");
+             log_debug_printf("Error while incrementing checkpoint");
              goto err;
          }
          if (pn532_mifareclassic_transfer(block)) {
-             log_printf("Error while transfer checkpoint block");
+             log_debug_printf("Error while transfer checkpoint block");
              goto err;
          }
 
-         log_printf("Reading signature ...");
+         log_debug_printf("Reading signature ...");
          for (i = 0; i < 4; i++) {
             block = (i + 8) + (i==3?1:0); /* omit 11th block */
             if (pn532_mifareclassic_authenticateblock(
                   uid, uid_length, block, MIFARE_AUTH_KEY_A, gate_mifare_key)) {
-                log_printf("Error while unlocking block");
+                log_debug_printf("Error while unlocking block");
                 goto err;
             }
 
             if (pn532_mifareclassic_readdatablock(
                   block, &crypto_sig[i * 16], sizeof(crypto_sig) - (i * 16))) {
-                log_printf("Error while reading user auth block");
+                log_debug_printf("Error while reading user auth block");
                 goto err;
             }
 
-            log_hex("Auth sig:", &crypto_sig[i*16], 16);
+            log_debug_hex("Auth sig:", &crypto_sig[i*16], 16);
          }
 
          LEDS_OFF(BSP_LED_2_MASK);
 
-         log_printf("Testing sig...");
+         log_debug_printf("Testing sig...");
          if (crypto_sign_ed25519_verify_detached(crypto_sig, auth_data, 16 + 4, crypto_pk)) {
-            log_printf("Sig verify error\n\n");
+            log_debug_printf("Sig verify error\n\n");
             goto err;
          }
-         log_printf("Sig test OK!\n\n");
+         log_debug_printf("Sig test OK!\n\n");
          LEDS_ON(BSP_LED_3_MASK);
          nrf_delay_ms(1000);
     }
@@ -397,7 +397,7 @@ void tag_scan(void)
    return;
 
 err:
-   log_printf("Sig test FAIL!\n\n");
+   log_debug_printf("Sig test FAIL!\n\n");
    LEDS_OFF(BSP_LED_2_MASK);
    LEDS_ON(BSP_LED_1_MASK);
    nrf_delay_ms(1000);
@@ -409,7 +409,7 @@ int main(void)
     board_setup();
 
     LEDS_ON(BSP_LED_0_MASK);
-    log_printf("Main loop");
+    log_debug_printf("Main loop");
     for (;;) {
         LEDS_OFF(LEDS_MASK);
         LEDS_ON(BSP_LED_0_MASK);

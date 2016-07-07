@@ -969,8 +969,8 @@ int pn532_mifareclassic_authenticateblock(
     uint8_t len;
     uint8_t auth_buf[16];
 
-    //log_printf("Trying to auth block %u, key=%u", block, key_idx);
-    //log_hex("Auth block:", key_data, 6);
+    //log_debug_printf("Trying to auth block %u, key=%u", block, key_idx);
+    //log_debug_hex("Auth block:", key_data, 6);
 
     // Prepare the authentication command //
     auth_buf[0] = (key_idx) ? MIFARE_CMD_AUTH_B : MIFARE_CMD_AUTH_A;
@@ -1027,7 +1027,7 @@ int pn532_mifareclassic_writedatablock(uint8_t block, uint8_t *data)
     uint8_t len;
     uint8_t writeop_buf[18];
 
-    log_printf("Trying to write 16 bytes to block");
+    //log_debug_printf("Trying to write 16 bytes to block");
 
     /* Prepare command */
     writeop_buf[0] = MIFARE_CMD_WRITE; /* Mifare Write command = 0xA0 */

@@ -26,7 +26,7 @@ SIZE            := '$(GNU_INSTALL_ROOT)/bin/$(GNU_PREFIX)-size'
 C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath pn532.c) \
-        $(abspath uart_log.c) \
+        $(abspath log_uart.c) \
         $(abspath crc_itu.c) \
         $(abspath fatfs_mmc.c) \
         $(abspath fatfs_ff.c) \

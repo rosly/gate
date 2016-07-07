@@ -1,5 +1,8 @@
-#ifndef _UART_LOG_H_
-#define _UART_LOG_H_
+#ifndef _LOG_DEBUG_H_
+#define _LOG_DEBUG_H_
+
+#include <stdarg.h>
+#include "log_uart.h"
 
 #ifndef NRF_LOG_USES_COLORS
     #define NRF_LOG_USES_COLORS 1
@@ -29,11 +32,11 @@
 
 #define NRF_LOG_INIT()
 
-#define NRF_LOG_PRINTF(...)             log_printf( #__VA_ARGS__)
+#define NRF_LOG_PRINTF(...)             log_debug_printf( #__VA_ARGS__)
 #define NRF_LOG_PRINTF_DEBUG(...)       NRF_LOG_PRINTF( #__VA_ARGS__)
 #define NRF_LOG_PRINTF_ERROR(...)       NRF_LOG_PRINTF( #__VA_ARGS__)
 
-#define NRF_LOG(...)                    log_printf( #__VA_ARGS__)
+#define NRF_LOG(...)                    log_debug_printf( #__VA_ARGS__)
 #define NRF_LOG_DEBUG(...)              NRF_LOG_PRINTF( #__VA_ARGS__)
 #define NRF_LOG_ERROR(...)              NRF_LOG_PRINTF( #__VA_ARGS__)
 
@@ -48,9 +51,31 @@
 #define NRF_LOG_HAS_INPUT()
 #define NRF_LOG_READ_INPUT(p_char)
 
-void log_init();
-void log_printf(const char * format_msg, ...);
-void log_hex(const char* msg, const uint8_t * p_data, const uint32_t len);
+static inline void log_debug_init(void)
+{
+	log_uart_init();
+}
+
+static inline void log_debug_printf(const char * format_msg, ...)
+{
+    va_list p_args;
+    va_start(p_args, format_msg);
+    log_uart_printf(format_msg, p_args);
+    va_end(p_args);
+}
+
+static inline void log_debug_hex(const char* msg, const uint8_t * p_data, 
+											size_t len)
+{
+	log_uart_hex(msg, p_data, len);
+}
+
+/** Debug messages which cannot be stored on persistent media
+ * Such calls can be used in the file system and disk block driver itself
+ * Also can be used for high frequency debugs
+ */
+static inline void log_debug_volatile_printf(const char * format_msg, ...)
+{
+}
 
 #endif
-

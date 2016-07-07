@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -6,7 +5,7 @@
                        define from makefile */
 #include <nrf_uart.h>
 
-inline static void log_write_string(const char* msg)
+inline static void log_uart_write_string(const char* msg)
 {
     while (*msg)
     {
@@ -17,7 +16,7 @@ inline static void log_write_string(const char* msg)
     }
 }
 
-void log_init()
+void log_uart_init()
 {
     nrf_uart_disable(NRF_UART0);
 
@@ -42,7 +41,7 @@ void log_init()
     nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTTX);
 }
 
-void log_printf(const char * format_msg, ...)
+void log_uart_printf(const char * format_msg, ...)
 {
     char buffer[256];
 
@@ -51,25 +50,24 @@ void log_printf(const char * format_msg, ...)
     vsnprintf(buffer, sizeof(buffer), format_msg, p_args);
     va_end(p_args);
 
-    log_write_string(buffer);
-    log_write_string("\r\n");
+    log_uart_write_string(buffer);
+    log_uart_write_string("\r\n");
 }
 
-void log_hex(const char* msg, const uint8_t * p_data, const uint32_t len)
+void log_uart_hex(const char* msg, const uint8_t * p_data, const uint32_t len)
 {
     size_t i = 0;
     char buffer[4];
     
-    log_write_string(msg);
+    log_uart_write_string(msg);
     while (i < len)
     {
         snprintf(buffer, sizeof(buffer), " %02X", p_data[i]);
-        log_write_string(buffer);
+        log_uart_write_string(buffer);
 		  if (!(++i % 16))
-				log_write_string("\r\n");
+				log_uart_write_string("\r\n");
     }
 
-    log_write_string("\r\n");
+    log_uart_write_string("\r\n");
 }
-
 

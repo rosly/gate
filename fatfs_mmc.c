@@ -17,7 +17,7 @@
 #include "nrf_gpio.h"
 #include <sdk_errors.h> /* for ret_code_t and error defines */
 
-#include "uart_log.h"
+#include "log_debug.h"
 
 #include "fatfs_diskio.h"
 #include "crc_itu.h"
@@ -128,10 +128,10 @@ static void spi_check_delay(void)
 		nrf_spi_event_clear(MMC_SPI, NRF_SPI_EVENT_READY);
 		ret = nrf_spi_rxd_get(MMC_SPI);
 		if (ret != 0xff)
-			log_printf("Received invalid dummy data 0x%02x", ret);
+			log_debug_volatile_printf("Received invalid dummy data 0x%02x", ret);
 	}
 
-	log_printf("SPI communication delay %u CPU cycles", del / cnt);
+	log_debug_volatile_printf("SPI communication delay %u CPU cycles", del / cnt);
 }
 #endif
 
@@ -358,7 +358,7 @@ static int card_rcv_block(uint8_t *buff, size_t buff_size)
 
 	/* compare CRC's */
 	if (crc_cal != crc_rcv) {
-		log_printf("CRC error!");
+		log_debug_volatile_printf("CRC error!");
 		return 0; /* Error */
 	}
 
