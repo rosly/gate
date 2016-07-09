@@ -27,6 +27,8 @@ C_SOURCE_FILES += \
         $(abspath main.c) \
         $(abspath pn532.c) \
         $(abspath log_uart.c) \
+        $(abspath log_disc.c) \
+        $(abspath log_debug.c) \
         $(abspath crc_itu.c) \
         $(abspath fatfs_mmc.c) \
         $(abspath fatfs_ff.c) \

@@ -11,8 +11,6 @@
 #include "log_debug.h"
 #include "sodium.h"
 #include "pn532.h" /* for pn532 driver */
-#include "fatfs_diskio.h"
-#include "fatfs_ff.h"
 
 #define ERR_CHECK(_err_code) \
   do { \
@@ -51,45 +49,7 @@ void board_setup(void)
    log_debug_printf("Initializing pn532");
    err_code = pn532_init(false);
    ERR_CHECK(err_code);
-
-   disk_initialize(0);
-
-	size_t i;
-	for (i = 0; i < 100; i++) {
-		uint8_t buff[512];
-		if (RES_OK != disk_read(0, buff, i, 1))
-			break;
-		//log_debug_printf("Sector %u", i);
-		//log_debug_hex("", buff, 512);
-	}
-	log_debug_printf("MMC read done. Read %u sectors", i);
-
-	do {
-		FATFS fs;
-		FIL fp;
-		UINT bw;
-
-		if (f_mount(&fs, "0:", 1)) {
-			log_debug_printf("f_mount error");
-			break;
-		}
-
-		if (FR_OK != f_open(&fp, "0:\\plik.txt", 
-								  FA_WRITE | FA_CREATE_ALWAYS)) {
-			log_debug_printf("Open file error");
-			break;
-		}
-
-		if (FR_OK != f_write(&fp, "Hello world\r\n", 13, &bw)) {
-			 log_debug_printf("Write file error");
-			 break;
-		}
-
-		if (FR_OK != f_close(&fp)) {
-			 log_debug_printf("Close file error");
-			 break;
-		}
-	} while (0);
+   log_debug_printf("Initialization DONE");
 }
 
 void dump_card(void)
